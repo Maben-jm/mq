@@ -8,15 +8,29 @@
 
 ## 1.MQ目前流行的几种框架
 
-> 目前比较流行的MQ框架主要有：KAFKA,ACTIVE MQ,RABBITMQ,ROCKETMQ等；
->
-> kafka：           编程语言Java
->
-> activeMq：    编程语言Java              符合JMS规范
->
-> rabbitMq:      编程语言erlang
->
-> rocketMq:      编程语言Java
+| 语言     | 编程语言 | JMS规范     | 吞吐量 |
+| -------- | -------- | :---------- | ------ |
+| kafka    | Java     |             | 十万级 |
+| activeMq | Java     | 符合JMS规范 | 万级   |
+| rabbitMq | erlang   | 符合JMS规范 | 万级   |
+| rockeMq  | Java     |             | 十万级 |
+
+### 1.1 JMS
+
+> JMS包含四大属性；
+
+* JMS provider：实现JMS接口和规范的消息中间件，也就是我们的MQ服务器；
+* JMS produce： 消息生产者，创建和发送JMS消息的客户端应用；
+* JMS consumer：消息消费者，接收和处理JMS消息的客户端应用；
+* JMS message
+  * 消息头
+    * JMSDestination    （JMS目标地）要么是队列 || 要么是主题
+    * JMSDeliveryMode  （JMS交付模式 ）持久和非持久模式 ；非持久就传递一次，一次过后不管成功与否，消息都没有了。
+    * JMSExpiration   （JMS过期） 如果设置成0，则说明该消息永不过期；默认就是永不过期。
+    * JMSPriority   （JMS优先级） 0-9：0-4是普通，5-9是加急，JMS不是严格按照优先级排序，但是加急的消息一定是比普通的消息要先到达。
+    * JMSMessageId  消息id ：消息的幂等性用到
+  * 消息属性
+  * 消息体
 
 ##  2.activeMQ学习
 

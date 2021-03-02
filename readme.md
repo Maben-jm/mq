@@ -15,23 +15,6 @@
 | rabbitMq | erlang   | 符合JMS规范 | 万级   |
 | rockeMq  | Java     |             | 十万级 |
 
-### 1.1 JMS
-
-> JMS包含四大属性；
-
-* JMS provider：实现JMS接口和规范的消息中间件，也就是我们的MQ服务器；
-* JMS produce： 消息生产者，创建和发送JMS消息的客户端应用；
-* JMS consumer：消息消费者，接收和处理JMS消息的客户端应用；
-* JMS message
-  * 消息头
-    * JMSDestination    （JMS目标地）要么是队列 || 要么是主题
-    * JMSDeliveryMode  （JMS交付模式 ）持久和非持久模式 ；非持久就传递一次，一次过后不管成功与否，消息都没有了。
-    * JMSExpiration   （JMS过期） 如果设置成0，则说明该消息永不过期；默认就是永不过期。
-    * JMSPriority   （JMS优先级） 0-9：0-4是普通，5-9是加急，JMS不是严格按照优先级排序，但是加急的消息一定是比普通的消息要先到达。
-    * JMSMessageId  消息id ：消息的幂等性用到
-  * 消息属性
-  * 消息体
-
 ##  2.activeMQ学习
 
 > 官网：http://activemq.apache.org
@@ -45,6 +28,29 @@
 > ​	point-to-point（1-1）: sender    --------------->   queue    
 >
 > ​    Publish-and-Subscribe（1-Many）:   publisher  --------------> topic 
+
+### 2.0 JMS
+
+> JMS包含四大属性（一下以activeMq为例）；
+
+* JMS provider：实现JMS接口和规范的消息中间件，也就是我们的MQ服务器；
+* JMS produce： 消息生产者，创建和发送JMS消息的客户端应用；
+* JMS consumer：消息消费者，接收和处理JMS消息的客户端应用；
+* JMS message
+  * 消息头
+    * JMSDestination    （JMS目标地）要么是队列 || 要么是主题
+    * JMSDeliveryMode  （JMS交付模式 ）持久和非持久模式 ；非持久就传递一次，一次过后不管成功与否，消息都没有了。
+    * JMSExpiration   （JMS过期） 如果设置成0，则说明该消息永不过期；默认就是永不过期。
+    * JMSPriority   （JMS优先级） 0-9：0-4是普通，5-9是加急，JMS不是严格按照优先级排序，但是加急的消息一定是比普通的消息要先到达。
+    * JMSMessageId  消息id ：消息的幂等性用到
+  * 消息体
+    * TextMessage 普通字符串消息，包含一个string
+    * MapMessage 一个Map类型的消息，key为string，value为Java的基本类型
+    * BytesMessage 二进制数组消息
+    * StreamMessage   Java数据流消息
+    * ObjectMessage  对象消息，包含一个可序列化的Java对象
+  * 消息属性
+    * 他们是以「属性名」和「属性值」的形式制定的；可以将属性视为消息头的扩展，属性可以指定一些消息头没有涵盖的附加信息，比如可以在消息属性中指定消息选择器；
 
 ### 2.1 命令相关
 
@@ -416,4 +422,118 @@ public class JmsConsumerTopic2 {
 ****************************************
 注：针对publisher and subscribe模式，一定要先启动消费者；加入刚开始没有消费者，生产者直接启动，那么此时生产的消息就变成了废消息，即使之后启动的消费者也不会再接收这些之前的消息了！！！！
 ````
+
+### 2.4 activeMq持久性
+
+#### 2.4.1 队列参数设置
+
+````java
+// 1：非持久化::当服务器宕机重启之后，消息不存在
+producer.setDeliveryMode(DeliveryMode.NOT_PERSISTENT);
+//2:持久化：当服务器宕机重启后，消息任然存在
+producer.setDeliveryMode(DeliveryMode.PERSISTENT);
+````
+
+#### 2.4.2 activeMq 队列默认是持久化的
+
+#### 2.4.3 activeMq 订阅参数设置（解决2.3.3.4遗留问题）
+
+##### 2.4.3.1 topic持久化发送端
+
+````java
+package mq_003;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+
+import javax.jms.*;
+
+public class JmsProduceTopicPersist {
+    public static final String ACTIVE_URL = "tcp://127.0.0.1:61616";
+    public static final String QUEUE_NAME = "topic_persist";
+
+    public static void main(String[] args) throws JMSException {
+        //1:创建连接工厂，才用默认的用户名和密码
+        final ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(ACTIVE_URL);
+        //2：通过连接工程，获取连接connection并启动访问
+        final Connection connection = factory.createConnection();
+        //3:创建会话session（两个参数：第一个是事物；第二个是签收）
+        final Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+        //4:创建目的地（具体是队列或者主题）
+        final Topic topic = session.createTopic(QUEUE_NAME);
+        //5:创建生产者
+        final MessageProducer producer = session.createProducer(topic);
+        producer.setDeliveryMode(DeliveryMode.PERSISTENT);
+        //注意一定要在这里启动连接！！！！！
+        connection.start();
+        //6:通过生产者生产3条消息发送到MQ队列中
+        for (int i = 0; i < 4; i++) {
+            //7:创建消息
+            final TextMessage message = session.createTextMessage("msg----" + i);
+            //8:通过生产者上传
+            producer.send(message);
+        }
+        //9:释放资源
+        producer.close();
+        session.close();
+        connection.close();
+
+        System.out.println("*************消息发布成功***********");
+    }
+}
+````
+
+##### 2.4.3.2 topic持久化消费端
+
+````java
+package mq_003;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+
+import javax.jms.*;
+import java.io.IOException;
+import java.util.Objects;
+
+public class JmsConsumerTopicPersist {
+    public static final String ACTIVE_URL = "tcp://127.0.0.1:61616";
+    public static final String QUEUE_NAME = "topic_persist";
+
+    public static void main(String[] args) throws JMSException, IOException {
+
+        System.out.println("***********我是持久化消费者**********");
+
+        //1:创建连接工厂，才用默认的用户名和密码
+        final ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(ACTIVE_URL);
+        //2：通过连接工程，获取连接connection并订阅
+        final Connection connection = factory.createConnection();
+        connection.setClientID("z3");
+        //3:创建会话session（两个参数：第一个是事物；第二个是签收）
+        final Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+        //4:创建目的地（具体是队列或者主题）
+        final Topic topic = session.createTopic(QUEUE_NAME);
+        final TopicSubscriber durableSubscriber = session.createDurableSubscriber(topic, "remark...");
+        connection.start();
+        Message message = durableSubscriber.receive();
+        while (Objects.nonNull(message)) {
+            final TextMessage textMessage = (TextMessage) message;
+            System.out.println("*******接收到的消息2*******" + textMessage.getText());
+            message = durableSubscriber.receive();
+        }
+        session.close();
+        connection.close();
+
+    }
+}
+````
+
+##### 2.4.3.3 总结
+
+````
+操作步骤：
+	先启动消费端，让消费者「z3」先订阅上topic「topic_persist」；
+	之后关闭消费端；
+	起送生产端生产数据；
+	最后启动消费端，任然能够接受数据；
+````
+
+
 

@@ -63,6 +63,8 @@
 	bin/activemq restart
 > 带日志的启动
   bin/activemq start > ./log/myActiveMq.log
+> 指定配置文件启动
+  bin/activemq start xbean:file:/user/.../activemq.xml
 ````
 
 #### 2.1.2查看启动
@@ -533,6 +535,173 @@ public class JmsConsumerTopicPersist {
 	之后关闭消费端；
 	起送生产端生产数据；
 	最后启动消费端，任然能够接受数据；
+````
+
+### 2.5 activeMq事物
+
+#### 2.5.1 事物生产端
+
+````java
+package mq_004;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+
+import javax.jms.*;
+
+public class JmsProduceTx {
+    public static final String ACTIVE_URL = "tcp://127.0.0.1:61616";
+    public static final String QUEUE_NAME = "queue01_tx";
+    public static void main(String[] args) throws JMSException {
+        final ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(ACTIVE_URL);
+        final Connection connection = factory.createConnection();
+        connection.start();
+        final Session session = connection.createSession(true, Session.AUTO_ACKNOWLEDGE);
+        final Destination destination = session.createQueue(QUEUE_NAME);
+        final MessageProducer producer = session.createProducer(destination);
+        try {
+            //在这里处理业务逻辑
+            for (int i = 0; i < 4; i++) {
+                final TextMessage message = session.createTextMessage("msg----" + i);
+                producer.send(message);
+            }
+            session.commit();
+        }catch (Exception e){
+            //报错直接回滚
+            session.rollback();
+        }
+        producer.close();
+        session.close();
+        connection.close();
+        System.out.println("*************消息发布成功***********");
+
+    }
+}
+````
+
+#### 2.5.2 事物消费端
+
+````java
+package mq_004;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+
+import javax.jms.*;
+import java.util.Objects;
+
+public class JmsConsumerTx {
+
+    public static final String ACTIVE_URL = "tcp://127.0.0.1:61616";
+    public static final String QUEUE_NAME = "queue01_tx";
+
+    public static void main(String[] args) throws JMSException {
+        final ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(ACTIVE_URL);
+        final Connection connection = factory.createConnection();
+        connection.start();
+        final Session session = connection.createSession(true, Session.AUTO_ACKNOWLEDGE);
+        final Destination destination = session.createQueue(QUEUE_NAME);
+        final MessageConsumer consumer = session.createConsumer(destination);
+        while (true){
+            final TextMessage textMessage = (TextMessage) consumer.receive(3000);
+            if (Objects.isNull(textMessage)){
+                break;
+            }
+            System.out.println("****接收到的消息****"+textMessage.getText());
+        }
+        //这里如果没有commit，那么就会被MQ判定为未消费
+        session.commit();
+        consumer.close();
+        session.close();
+        connection.close();
+        System.out.println("*********consumer is end******");
+    }
+}
+
+````
+
+### 2.6 activeMq 签收
+
+#### 2.6.1 签收简介
+
+* 自动签收（默认）  Session.AUTO_ACKNOWLEDGE
+* 手动签收
+  * Session.CLIENT_ACKNOWLEDGE
+  * 客户端调用acknowlege手动签收
+* 允许重复消息 Session.DUPS_OK_ACKNOWLEDGE (很少用到)
+
+#### 2.6.2 手动签收代码
+
+````java
+package mq_004;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+
+import javax.jms.*;
+import java.util.Objects;
+/**
+主要针对消费者
+*/
+public class JmsConsumerTx {
+
+    public static final String ACTIVE_URL = "tcp://127.0.0.1:61616";
+    public static final String QUEUE_NAME = "queue01_tx";
+
+    public static void main(String[] args) throws JMSException {
+        final ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(ACTIVE_URL);
+        final Connection connection = factory.createConnection();
+        connection.start();
+        final Session session = connection.createSession(true, Session.CLIENT_ACKNOWLEDGE);
+        final Destination destination = session.createQueue(QUEUE_NAME);
+        final MessageConsumer consumer = session.createConsumer(destination);
+        while (true){
+            final TextMessage textMessage = (TextMessage) consumer.receive(3000);
+            if (Objects.isNull(textMessage)){
+                break;
+            }
+            textMessage.acknowledge();
+            System.out.println("****接收到的消息****"+textMessage.getText());
+        }
+        //这里如果没有commit，那么就会被MQ判定为未消费
+        session.commit();
+        consumer.close();
+        session.close();
+        connection.close();
+        System.out.println("*********consumer is end******");
+    }
+}
+
+````
+
+### 2.7 事物和签收注意
+
+````java
+如果「事物」开启了，那么就以「事物」优先，即使「签收」开启了，并且没有写「textMessage.acknowledge();」，也会被MQ定位为已经签收了；也就是说「事物」的优先级大于「签收」
+````
+
+### 2.8 activeMq的Broker
+
+````java
+Broker 相当于一个activeMq的实例；
+也就是说：Broker其实就是实现了用代码的形式启动ActiveMQ，将MQ嵌入到Java代码中，一遍随时启动，再用的时候在启动，这样能节省资源，也能保证可靠性；
+````
+
+````java
+package mq_005;
+
+import org.apache.activemq.broker.BrokerService;
+
+/**
+ * 嵌入到Java中的activeMQ
+ */
+public class EmbedBroker {
+    public static void main(String[] args) throws Exception {
+
+        BrokerService brokerService = new BrokerService();
+        brokerService.setUseJmx(true);
+        brokerService.addConnector("tcp://localhost:61616");
+        brokerService.start();
+
+    }
+}
 ````
 
 

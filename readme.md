@@ -425,9 +425,9 @@ public class JmsConsumerTopic2 {
 注：针对publisher and subscribe模式，一定要先启动消费者；加入刚开始没有消费者，生产者直接启动，那么此时生产的消息就变成了废消息，即使之后启动的消费者也不会再接收这些之前的消息了！！！！
 ````
 
-### 2.4 activeMq持久性
+#### 2.3.4 activeMq持久性
 
-#### 2.4.1 队列参数设置
+##### 2.3.4.1 队列参数设置
 
 ````java
 // 1：非持久化::当服务器宕机重启之后，消息不存在
@@ -436,11 +436,11 @@ producer.setDeliveryMode(DeliveryMode.NOT_PERSISTENT);
 producer.setDeliveryMode(DeliveryMode.PERSISTENT);
 ````
 
-#### 2.4.2 activeMq 队列默认是持久化的
+##### 2.3.4.2 activeMq 队列默认是持久化的
 
-#### 2.4.3 activeMq 订阅参数设置（解决2.3.3.4遗留问题）
+##### 2.3.4.3 activeMq 订阅参数设置（解决2.3.3.4遗留问题）
 
-##### 2.4.3.1 topic持久化发送端
+###### 2.3.4.3.1 topic持久化发送端
 
 ````java
 package mq_003;
@@ -484,7 +484,7 @@ public class JmsProduceTopicPersist {
 }
 ````
 
-##### 2.4.3.2 topic持久化消费端
+###### 2.3.4.3.2 topic持久化消费端
 
 ````java
 package mq_003;
@@ -527,7 +527,7 @@ public class JmsConsumerTopicPersist {
 }
 ````
 
-##### 2.4.3.3 总结
+###### 2.3.4.3.3 总结
 
 ````
 操作步骤：
@@ -537,9 +537,9 @@ public class JmsConsumerTopicPersist {
 	最后启动消费端，任然能够接受数据；
 ````
 
-### 2.5 activeMq事物
+#### 2.3.5 activeMq事物
 
-#### 2.5.1 事物生产端
+##### 2.3.5.1 事物生产端
 
 ````java
 package mq_004;
@@ -578,7 +578,7 @@ public class JmsProduceTx {
 }
 ````
 
-#### 2.5.2 事物消费端
+##### 2.3.5.2 事物消费端
 
 ````java
 package mq_004;
@@ -618,9 +618,9 @@ public class JmsConsumerTx {
 
 ````
 
-### 2.6 activeMq 签收
+#### 2.3.6 activeMq 签收
 
-#### 2.6.1 签收简介
+##### 2.3.6.1 签收简介
 
 * 自动签收（默认）  Session.AUTO_ACKNOWLEDGE
 * 手动签收
@@ -628,7 +628,7 @@ public class JmsConsumerTx {
   * 客户端调用acknowlege手动签收
 * 允许重复消息 Session.DUPS_OK_ACKNOWLEDGE (很少用到)
 
-#### 2.6.2 手动签收代码
+##### 2.3.6.2 手动签收代码
 
 ````java
 package mq_004;
@@ -671,13 +671,13 @@ public class JmsConsumerTx {
 
 ````
 
-### 2.7 事物和签收注意
+#### 2.3.7 事物和签收注意
 
 ````java
 如果「事物」开启了，那么就以「事物」优先，即使「签收」开启了，并且没有写「textMessage.acknowledge();」，也会被MQ定位为已经签收了；也就是说「事物」的优先级大于「签收」
 ````
 
-### 2.8 activeMq的Broker
+#### 2.3.8 activeMq的Broker
 
 ````java
 Broker 相当于一个activeMq的实例；
@@ -700,6 +700,331 @@ public class EmbedBroker {
         brokerService.addConnector("tcp://localhost:61616");
         brokerService.start();
 
+    }
+}
+````
+
+### 2.4 activeMQ整合Spring
+
+#### 2.4.1 pom.xml文件
+
+````xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.maben</groupId>
+    <artifactId>activemq-002-spring</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <project.build.sourceEncoding>utf-8</project.build.sourceEncoding>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <!--整合spring start-->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jms</artifactId>
+            <version>4.3.23.RELEASE</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-core</artifactId>
+            <version>4.3.23.RELEASE</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-aop</artifactId>
+            <version>4.3.23.RELEASE</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-orm</artifactId>
+            <version>4.3.23.RELEASE</version>
+        </dependency>
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjrt</artifactId>
+            <version>1.6.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
+            <version>1.9.5</version>
+        </dependency>
+        <dependency>
+            <groupId>cglib</groupId>
+            <artifactId>cglib</artifactId>
+            <version>3.2.0</version>
+        </dependency>
+
+        <!--整合spring end-->
+
+        <!--json依赖-->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.11.3</version>
+        </dependency>
+
+        <!--activemq包-->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-all</artifactId>
+            <version>5.15.9</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.xbean</groupId>
+            <artifactId>xbean-spring</artifactId>
+            <version>3.16</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-pool</artifactId>
+            <version>5.15.9</version>
+        </dependency>
+
+
+        <!--log包-->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.25</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.2.3</version>
+        </dependency>
+        <!--lombok包-->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.10</version>
+        </dependency>
+        <!--Junit包-->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.12</version>
+        </dependency>
+    </dependencies>
+
+</project>
+````
+
+#### 2.4.2 spring配置文件
+
+***主配置文件  applicationContext.xml***
+
+````xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:aop="http://www.springframework.org/schema/aop" xmlns:tx="http://www.springframework.org/schema/tx"
+       xsi:schemaLocation="
+        http://www.springframework.org/schema/beans
+        http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/context
+        http://www.springframework.org/schema/context/spring-context.xsd
+        http://www.springframework.org/schema/aop
+        http://www.springframework.org/schema/aop/spring-aop.xsd
+        http://www.springframework.org/schema/tx
+        http://www.springframework.org/schema/tx/spring-tx.xsd ">
+
+    <!-- 配置文件导入  -->
+    <import resource="classpath:spring/*.xml"/>
+</beans>
+````
+
+***扫描注解配置 anonation.xml***
+
+````xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xsi:schemaLocation="
+        http://www.springframework.org/schema/beans
+        http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+        http://www.springframework.org/schema/context
+        http://www.springframework.org/schema/context/spring-context-4.0.xsd
+        http://www.springframework.org/schema/tx
+        http://www.springframework.org/schema/tx/spring-tx-4.0.xsd
+        http://www.springframework.org/schema/aop
+        http://www.springframework.org/schema/aop/spring-aop-4.0.xsd
+">
+    <!--配置包的自动扫描-->
+    <context:component-scan base-package="com.maben.activemqSpring"></context:component-scan>
+
+</beans>
+````
+
+***activeMQ配置文件 activeMQ.xml***
+
+````xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/tx
+        http://www.springframework.org/schema/tx/spring-tx.xsd
+        http://www.springframework.org/schema/mvc
+        http://www.springframework.org/schema/context
+        http://www.springframework.org/schema/context/spring-context.xsd
+        http://www.springframework.org/schema/aop
+        http://www.springframework.org/schema/aop/spring-aop.xsd
+        http://www.springframework.org/schema/tx/spring-tx.xsd
+">
+
+    <!--配置生产者-->
+    <bean id="jmsFactory" class="org.apache.activemq.pool.PooledConnectionFactory" destroy-method="stop">
+        <property name="connectionFactory">
+            <bean class="org.apache.activemq.ActiveMQConnectionFactory">
+                <property name="brokerURL" value="tcp://127.0.0.1:61616"></property>
+            </bean>
+        </property>
+        <property name="maxConnections" value="100"></property>
+    </bean>
+
+
+    <!--Destination **  point-to-point -->
+    <bean id="destinationQueue" class="org.apache.activemq.command.ActiveMQQueue">
+        <!--构造注入，设置自己的队列名称-->
+        <constructor-arg index="0" value="my-queue-spring"></constructor-arg>
+    </bean>
+
+    <!--destination ** topic   publisher and subscribe-->
+    <bean id="destinationTopic" class="org.apache.activemq.command.ActiveMQTopic">
+        <!--通过构造注入，设置自己队列的名称-->
+        <constructor-arg index="0" value="my-topic-spring"></constructor-arg>
+    </bean>
+
+
+    <!--Spring提供的工具类，他具有发送和接收消息等-->
+    <bean id="jmsTemplate" class="org.springframework.jms.core.JmsTemplate">
+        <property name="connectionFactory" ref="jmsFactory"></property>
+        <property name="defaultDestination" ref="destinationQueue"></property>
+        <!--<property name="defaultDestination" ref="destinationTopic"></property>-->
+        <!--转换器-->
+        <property name="messageConverter">
+            <bean class="org.springframework.jms.support.converter.SimpleMessageConverter"></bean>
+        </property>
+    </bean>
+
+    <!--配置监听器-->
+    <bean id="jmsContainer" class="org.springframework.jms.listener.DefaultMessageListenerContainer">
+        <property name="connectionFactory" ref="jmsFactory"></property>
+        <property name="destination" ref="destinationQueue"></property>
+        <property name="messageListener" ref="myListener"></property>
+    </bean>
+
+</beans>
+````
+
+#### 2.4.3 生产者
+
+````java
+package com.maben.activemqSpring.produce;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.stereotype.Service;
+
+import javax.jms.TextMessage;
+
+/**
+ * 注意这个消费者一次只能生产一条消息
+ */
+@Service
+public class SpringMQProducer {
+    @Autowired
+    private JmsTemplate jmsTemplate;
+
+    public static void main(String[] args){
+        final ApplicationContext applicationContext = new ClassPathXmlApplicationContext("classpath:applicationContext.xml");
+        SpringMQProducer springMQProducer = (SpringMQProducer) applicationContext.getBean("springMQProducer");
+        springMQProducer.jmsTemplate.send(session -> {
+            final TextMessage textMessage = session.createTextMessage("spring-activemq整合");
+            return textMessage;
+        });
+        System.out.println("**************Spring-activeMQ生产者发送结束**********");
+    }
+}
+````
+
+#### 2.4.4 消费者
+
+````java
+package com.maben.activemqSpring.consumer;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.stereotype.Service;
+
+/**
+ * 在没有配置监听器的情况下
+ * 注意这个消费者一次只能消费一条数据
+ */
+@Service
+public class SpringMQConsumer {
+
+    @Autowired
+    private JmsTemplate jmsTemplate;
+
+    public static void main(String[] args){
+        final ApplicationContext applicationContext = new ClassPathXmlApplicationContext("classpath:applicationContext.xml");
+        final SpringMQConsumer springMQConsumer = (SpringMQConsumer) applicationContext.getBean("springMQConsumer");
+        final String msg = (String) springMQConsumer.jmsTemplate.receiveAndConvert();
+        System.out.println("********消费者收到消息*******"+msg);
+    }
+
+}
+````
+
+#### 2.4.5 监听器
+
+````java
+package com.maben.activemqSpring.listener;
+
+import org.springframework.stereotype.Component;
+
+import javax.jms.JMSException;
+import javax.jms.Message;
+import javax.jms.MessageListener;
+import javax.jms.TextMessage;
+import java.util.Objects;
+
+@Component
+public class MyListener implements MessageListener {
+    @Override
+    public void onMessage(Message message) {
+        if (Objects.nonNull(message)){
+            if (message instanceof TextMessage){
+                TextMessage textMessage = (TextMessage) message;
+                try {
+                    System.out.println("***监听消费**"+textMessage.getText());
+                } catch (JMSException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
     }
 }
 ````

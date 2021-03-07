@@ -1029,5 +1029,358 @@ public class MyListener implements MessageListener {
 }
 ````
 
+### 2.5 activeMQ整合springboot
+
+#### 2.5.1 pom.xml文件
+
+````java
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.maben</groupId>
+    <artifactId>activemq-003-springboot</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>2.1.5.RELEASE</version>
+        <relativePath></relativePath>
+    </parent>
+
+    <properties>
+        <project.build.sourceEncoding>utf-8</project.build.sourceEncoding>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-activemq</artifactId>
+            <version>2.1.5.RELEASE</version>
+        </dependency>
+    </dependencies>
+
+</project>
+````
+
+#### 2.5.2 yml文件
+
+````java
+server:
+  port: 9001
+spring:
+  activemq:
+    broker-url: tcp://127.0.0.1:61616
+    user: admin
+    password: admin
+  jms:
+    pub-sub-domain: false # false:Queue(Default) true：Topic
+
+
+# 自定义参数
+my:
+  queueName: boot-activemq-queue
+  topicName: boot-activemq-topic
+````
+
+#### 2.5.3 主启动类
+
+````java
+package com.maben.activemqSpringboot;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ActivemqSpringbootMain {
+    public static void main(String[] args)throws Exception{
+        SpringApplication.run(ActivemqSpringbootMain.class,args);
+        System.out.println("****************启动完成！！！******************");
+    }
+}
+````
+
+
+
+#### 2.5.4  Java配置类
+
+````java
+package com.maben.activemqSpringboot.config;
+
+import org.apache.activemq.command.ActiveMQQueue;
+import org.apache.activemq.command.ActiveMQTopic;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.jms.annotation.EnableJms;
+import org.springframework.stereotype.Component;
+
+import javax.jms.Queue;
+import javax.jms.Topic;
+
+/**
+ * 配置bean的Java类
+ */
+@Component
+@EnableJms //开启JMS相关注解
+public class ConfigBean {
+
+    /**
+     * 动态获取队列名称
+     */
+    @Value("${my.queueName}")
+    private String queueName;
+
+    /**
+     * 动态获取主题名称
+     */
+    @Value("${my.topicName}")
+    private String topicName;
+
+    /**
+     * 注入队列
+     * @return Queue
+     */
+    @Bean
+    public Queue queue(){
+        return new ActiveMQQueue(queueName);
+    }
+
+    /**
+     * 注入主题
+     * @return Topic
+     */
+    public Topic topic(){
+        return new ActiveMQTopic(topicName);
+    }
+
+}
+
+````
+
+#### 2.5.5 生产者
+
+***queuq生产者***
+
+````java
+package com.maben.activemqSpringboot.produce;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jms.core.JmsMessagingTemplate;
+import org.springframework.stereotype.Component;
+
+import javax.jms.Queue;
+import java.util.UUID;
+
+/**
+ * activeMQ 生产者
+ */
+@Component
+public class QueueProduce {
+    @Autowired
+    private JmsMessagingTemplate  jmsMessagingTemplate;
+    @Autowired
+    private Queue queue;
+
+    public void productMessage(){
+        jmsMessagingTemplate.convertAndSend(queue,"***springboot product message**"+ UUID.randomUUID().toString());
+        System.out.println("**********发送消息完成************");
+    }
+}
+
+````
+
+***topic生产者***
+
+````java
+package com.maben.activemqSpringboot.produce;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jms.core.JmsMessagingTemplate;
+import org.springframework.stereotype.Component;
+
+import javax.jms.Topic;
+
+/**
+ * 配置topic的生产者
+ */
+@Component
+public class TopicProduce {
+
+    /**
+     * 注入模板工具类
+     */
+    @Autowired
+    private JmsMessagingTemplate jmsMessagingTemplate;
+    /**
+     * 注入topic的bean
+     */
+    @Autowired
+    private Topic topic;
+
+    public void sendTopicMsg(){
+        jmsMessagingTemplate.convertAndSend(topic,"*******主题生产者*******");
+    }
+
+}
+````
+
+
+
+#### 2.5.6 消费者
+
+````java
+package com.maben.activemqSpringboot.consumer;
+
+import org.springframework.jms.annotation.JmsListener;
+import org.springframework.stereotype.Component;
+
+import javax.jms.TextMessage;
+
+/**
+ * activeMQ整合springboot队列消费者
+ */
+@Component
+public class QueueConsumer {
+
+    /**
+     * 监听注解：监听相应的队列
+     * @param textMessage textMessage
+     * @throws Exception ..
+     */
+    @JmsListener(destination = "${my.queueName}")
+    public void receive(TextMessage textMessage)throws Exception{
+          System.out.println("************springboot接收消息********"+textMessage.getText());
+    }
+
+}
+
+````
+
+#### 2.5.7 测试类
+
+````java
+import com.maben.activemqSpringboot.ActivemqSpringbootMain;
+import com.maben.activemqSpringboot.produce.QueueProduce;
+import com.maben.activemqSpringboot.produce.TopicProduce;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.test.context.web.WebAppConfiguration;
+
+/**
+ * 测试消息MQ发送
+ * 注意：测试哪一个在yml中修改相应的配置「pub-sub-domain」参数
+ */
+@SpringBootTest(classes = ActivemqSpringbootMain.class)
+@RunWith(SpringJUnit4ClassRunner.class)
+@WebAppConfiguration
+public class TestActiveMQ {
+    @Autowired
+    private QueueProduce queueProduce;
+    @Autowired
+    private TopicProduce topicProduce;
+
+    @Test
+    public void testSendMsgQueue() throws Exception{
+        queueProduce.productMessage();
+    }
+    @Test
+    public void testSendMsgTopic()throws Exception{
+        topicProduce.sendTopicMsg();
+    }
+
+}
+
+````
+
+#### 2.5.8 遗留问题
+
+````java
+springboot整合activeMQ，怎样两种方式同事使用；
+````
+
+### 2.6 activeMQ小知识
+
+#### 2.6.1 activeMQ支持的通讯协议
+
+##### 2.6.1.1 简单介绍
+
+````
+1.activeMQ支持的通讯协议有：TCP、NIO、UDP、SSL、HTTP（S）、VM。
+2.配置位置：${activeMQ_home}/conf/activemq.xml中的<transportConnector>标签中；
+  <transportConnectors>
+    <!-- DOS protection, limit concurrent connections to 1000 and frame size to 100MB -->
+    <transportConnector name="openwire" uri="tcp://0.0.0.0:61616? maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+    <transportConnector name="amqp" uri="amqp://0.0.0.0:5672?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+    <transportConnector name="stomp" uri="stomp://0.0.0.0:61613?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+    <transportConnector name="mqtt" uri="mqtt://0.0.0.0:1883?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+    <transportConnector name="ws" uri="ws://0.0.0.0:61614?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+  </transportConnectors>
+3.详细看官网
+	http://activemq.apache.org/configuring-version-5-transports.html
+4.主要使用的也就是TCP和NIO的协议，其余的不太常用。
+	注意：不同的协议代码可能不一样！！！
+````
+
+##### 2.6.1.2 TCP协议
+
+***简介***
+
+````
+TCP传输的优点：
+	*可靠性高，稳定性强
+	*高效（字节流方式传输，效率高）
+	*有效性和可用性高，应用广泛，支持任何平台
+````
+
+***连接形式***
+
+````
+tcp://hostname:port?key=value
+````
+
+##### 2.6.1.3 NIO协议
+
+***简介***
+
+````
+NIO协议与TCP协议类似，但是NIO协议更侧重于底层的访问操作；它允许开发人员对统一资源可有更多的client调用和服务端有更多的负载。
+````
+
+***使用场景***
+
+````
+*有大量的client去连到broker上；一般情况下，大量的client去连接broker是被操作系统的线程所限制的，因此NIO的实现比TCP需要更少的线程去运行，所以这种情况下建议使用NIO模式；
+*可能对于broker有一个很迟钝的网络传输，也就是说NIO的性能要比TCP的要好！
+````
+
+***连接形式***
+
+````
+nio//ip:port?key=value
+````
+
+
+
 
 

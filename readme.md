@@ -8,12 +8,12 @@
 
 ## 1.MQ目前流行的几种框架
 
-| 语言     | 编程语言 | JMS规范     | 吞吐量 |
-| -------- | -------- | :---------- | ------ |
-| kafka    | Java     |             | 十万级 |
-| activeMq | Java     | 符合JMS规范 | 万级   |
-| rabbitMq | erlang   | 符合JMS规范 | 万级   |
-| rockeMq  | Java     |             | 十万级 |
+| 语言     | 编程语言 | JMS规范     | 吞吐量 | 事物 |
+| -------- | -------- | :---------- | ------ | ---- |
+| kafka    | Java     |             | 十万级 |      |
+| activeMq | Java     | 符合JMS规范 | 万级   | 支持 |
+| rabbitMq | erlang   | 符合JMS规范 | 万级   |      |
+| rockeMq  | Java     |             | 十万级 |      |
 
 ##  2.activeMQ学习
 
@@ -1321,7 +1321,7 @@ springboot整合activeMQ，怎样两种方式同事使用；
 
 ### 2.6 activeMQ小知识
 
-#### 2.6.1 activeMQ支持的通讯协议
+#### 2.6.1 通讯协议
 
 ##### 2.6.1.1 简单介绍
 
@@ -1347,7 +1347,8 @@ springboot整合activeMQ，怎样两种方式同事使用；
 ***简介***
 
 ````
-TCP传输的优点：
+1.Transmission Control Protocol(TCP)是默认的。TCP的Client监听端口61616
+2.TCP传输的优点：
 	*可靠性高，稳定性强
 	*高效（字节流方式传输，效率高）
 	*有效性和可用性高，应用广泛，支持任何平台
@@ -1380,7 +1381,77 @@ NIO协议与TCP协议类似，但是NIO协议更侧重于底层的访问操作�
 nio//ip:port?key=value
 ````
 
+***配置文件***
 
+````
+修改activemq.xml配置文件
+<broker>
+  ...
+  <transportConnectors>
+    <transportConnector name="nio" uri="nio://0.0.0.0:61616"/>  
+  </<transportConnectors>
+  ...
+</broker>
+````
+
+##### 2.6.1.4 协议扩展
+
+````
+现在的模式只能自己用自己的，也就是说指定tcp后面跟着tcp自己指定的端口，达不到通用的效果；
+使用「auto+」的扩展模式就可以达到一中模式，多种协议共同使用的效果；
+````
+
+````
+<transportConnector name="auto+nio" uri="auto+nio://0.0.0.0:61608?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600&amp;org.apache.activemq.transport.nio.SelectorManager.corePoolSize=20&amp;org.apache.activemq.transport.nio.Se1ectorManager.maximumPoo1Size=50"/>
+
+**********************
+也就是说，当代码中想使用「TCP」协议的时候只用如下URL:
+	private static final String ACTIVEMQ_URL = "tcp://118.24.20.3:61608";
+当代码想使用「NIO」协议的时候，URL改成下面这样就可以：
+	private static final String ACTIVEMQ_URL = "nio://118.24.20.3:61608";
+````
+
+#### 2.6.2 消息存储和持久化
+
+***简介***
+
+````
+1.持久化机制是什么？
+	如果activeMQ出现宕机，消息不会丢失的机制。
+2.持久化机制的存储逻辑是什么？
+	activeMQ持久化机制有JDBC\AMQ\KAHADB\LEVELDB等，无论哪种持久化机制，消息的存储逻辑是一直的。就是在发送者将消息发送出去后，消息中心首先将消息存储到本地数据文件、内存数据库或者远程数据库等。再试图将消息发给接收者，成功则将消息从存储中删除，失败则继续尝试尝试发送。消息中心启动以后，要先检查指定的存储位置是否有未成功发送的消息，如果有，则会先把存储位置中的消息发出去。
+````
+
+***存储机制介绍***
+
+````
+--- AMQ MESSAGE STORE ---
+AMQ是一种文件存储形式，他具有写入速度快和容易恢复的特点。消息存储在一个个文件中，文件的默认大小为32M，当一个存储文件中的全部消息已被消费，那么这个文件将被标识为可删除的，在下一个清除阶段，该文件将被删除。
+AMQ使用于activeMQ5.3以前的版本，现在的已经不再使用了。
+````
+
+````
+--- kahadb（重要） ---
+1.kahadb是activeMQ目前来说的默认机制，可用于任何场景，提高了性能和恢复力；
+2.消息存储机制使用的是「事物日志」和仅仅用一个索引文件来存储他所有的地址；数据被追加到「data、logs」中，当不再需要日志文件的使用，log文件就会被丢弃。
+3.在activemq.xml配置文件中的写法：
+	<persistenceAdapter>
+         <kahaDB directory="${activemq.data}/kahadb"/>
+   </persistenceAdapter>
+4.kahadb存储目录：
+	4.1 db-1.log ：（重要）
+		kahadb存储消息到预定义大小（默认是32M）的数据记录文件中，文件名为db-<number>.log中；
+		当一个文件已满时，就会创建新的日志文件，number加一；
+		当日志文件中的消息都已被消费完成后，这些log文件也将会被丢弃；
+  4.2 db.data ：（重要）
+  	该文件包含了持久化的BTree索引，索引了消息记录的消息，他是消息的索引文件。
+  4.3 db.free ：
+  	当前db.data文件里哪些是空闲的，文件具体内容是所有空闲页面的id
+  4.4 db.redo ：
+    用来进行消息回复，如果kahadb消息存储在强制退出后启动，用户回复BTree索引。
+  4.5 lock :
+    文件锁，表示当前获得kahadb读写权限的broker；
+````
 
 
 

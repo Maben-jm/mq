@@ -1455,3 +1455,117 @@ AMQ使用于activeMQ5.3以前的版本，现在的已经不再使用了。
 
 
 
+### 2.7 消息持久化之MYSQL
+
+#### 2.7.1 lib包
+
+> 将MySQL的驱动包拷贝到「activeMQ」的lib目录下:
+>
+> cp mysql-connector-java-8.0.23.jar  ../program/mq/apache-activemq-5.16.1/lib
+
+#### 2.7.2 JDBC PERSISTENCE ADAPTER
+
+````XML
+修改activemq.xml文件，将持久化从kahadb改为JDBC模式：
+修改之前：
+  <persistenceAdapter>
+      <kahaDB directory="${activemq.data}/kahadb"/>
+  </persistenceAdapter>
+修改后：
+  <persistenceAdapter>
+      <jdbcPersistenceAdapter dataSource="#mysql-ds"/>
+  </persistenceAdapter>	
+dataSource指定将要引用的持久化数据库的bean名称，「createTablesOnStartup」是否在启动的时候创建数据库表，默认为true,这样每次启动都会去创建数据库表了，一般是第一次启动的时候设置为「true」，之后就改为「false」。
+````
+
+````xml
+<!-- 在activemq.xml中 设置DataSource -->
+    </broker>
+
+    <bean id="mysql-ds" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="com.mysql.cj.jdbc.Driver"/>
+        <property name="url" value="jdbc:mysql://127.0.0.1:3306/activemq?relaxAutoCommit=true"/>
+        <property name="username" value="root"/>
+        <property name="password" value="123456"/>
+        <property name="maxTotal" value="200"/>
+        <property name="poolPreparedStatements" value="true"/>
+    </bean>
+
+
+    <!--
+        Enable web consoles, REST and Ajax APIs and demos
+        The web consoles requires by default login, you can disable this in the jetty.xml file
+
+        Take a look at ${ACTIVEMQ_HOME}/conf/jetty.xml for more details
+    -->
+    <import resource="jetty.xml"/>
+````
+
+#### 2.7.3 
+
+````sql
+-- 1.创建数据库
+		create database activemq character set utf8;
+-- 2.重启activeMQ 在数据库「activemq」中自动创建表,表说明如下：
+````
+
+ ````sql
+-- 主要用来存储持久化的订阅消息
+create table ACTIVEMQ_ACKS
+(
+    CONTAINER     varchar(250)     not null comment '消息的Destination',
+    SUB_DEST      varchar(250)     null comment '如果使用的是Static集群，这个字段会有集群其他系统的信息',
+    CLIENT_ID     varchar(250)     not null comment '每个订阅者都必须有一个唯一的客户端ID用以区分',
+    SUB_NAME      varchar(250)     not null comment '订阅者名称',
+    SELECTOR      varchar(250)     null comment '选择器，可以选择只消费满足条件的消息，条件可以用自定义属性实现，可支持多属性AND和OR操作',
+    LAST_ACKED_ID bigint           null comment '记录消费过消息的ID',
+    PRIORITY      bigint default 5 not null comment '优先级，默认5',
+    XID           varchar(250)     null,
+    primary key (CONTAINER, CLIENT_ID, SUB_NAME, PRIORITY)
+)
+    comment '用于存储订阅关系。如果是持久化Topic，订阅者和服务器的订阅关系在这个表保存';
+
+create index ACTIVEMQ_ACKS_XIDX
+    on ACTIVEMQ_ACKS (XID);
+
+ 
+-- 主要用于记录哪一个broker是Master broker
+create table ACTIVEMQ_LOCK
+(
+    ID          bigint       not null
+        primary key,
+    TIME        bigint       null,
+    BROKER_NAME varchar(250) null
+);
+
+ 
+-- 消息表，queue和topic都在这里面存储
+create table ACTIVEMQ_MSGS
+(
+    ID         bigint       not null
+        primary key,
+    CONTAINER  varchar(250) not null comment '消息的Destination',
+    MSGID_PROD varchar(250) null comment '消息发送者的主键',
+    MSGID_SEQ  bigint       null comment '消息发送的顺序，MSGID_PROD+MSGID_SEQ可以组成JMS的MessageId',
+    EXPIRATION bigint       null comment '消息的过期时间，存储的是从1970-01-01到现在的毫秒数',
+    MSG        blob         null comment '消息本体的Java序列化对象的二进制文件',
+    PRIORITY   bigint       null comment '优先级，从0-9数值越大优先级越高',
+    XID        varchar(250) null
+);
+
+create index ACTIVEMQ_MSGS_CIDX
+    on ACTIVEMQ_MSGS (CONTAINER);
+
+create index ACTIVEMQ_MSGS_EIDX
+    on ACTIVEMQ_MSGS (EXPIRATION);
+
+create index ACTIVEMQ_MSGS_MIDX
+    on ACTIVEMQ_MSGS (MSGID_PROD, MSGID_SEQ);
+
+create index ACTIVEMQ_MSGS_PIDX
+    on ACTIVEMQ_MSGS (PRIORITY);
+
+create index ACTIVEMQ_MSGS_XIDX
+    on ACTIVEMQ_MSGS (XID);
+ ````
+

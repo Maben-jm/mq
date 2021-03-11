@@ -1501,7 +1501,7 @@ dataSource指定将要引用的持久化数据库的bean名称，「createTables
     <import resource="jetty.xml"/>
 ````
 
-#### 2.7.3 
+#### 2.7.3 数据表
 
 ````sql
 -- 1.创建数据库

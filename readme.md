@@ -1507,6 +1507,13 @@ dataSource指定将要引用的持久化数据库的bean名称，「createTables
 -- 1.创建数据库
 		create database activemq character set utf8;
 -- 2.重启activeMQ 在数据库「activemq」中自动创建表,表说明如下：
+-- 3.总结：
+	如果是queue：
+		在没有消费者消费的情况下，会将消息保存在「ACTIVEMQ_MSGS」表中，只要消费者消费过了，这些消息就会从DB表中删除；
+	如果是topic
+		一般先启动消费者，在启动生产者，消费者的消息将会存储到「ACTIVEMQ_ACKS」表中；
+		如果在ActiveMQ管里面页面「Subscribe」中主动删除了该client，那么数据将会从「ACTIVEMQ_ACKS」中删除；
+		topic接收到的消息都会存储在「ACTIVEMQ_MSGS」表中，即使某个消费者消费了，这个消息也不会被删除。
 ````
 
  ````sql
@@ -1568,4 +1575,30 @@ create index ACTIVEMQ_MSGS_PIDX
 create index ACTIVEMQ_MSGS_XIDX
     on ACTIVEMQ_MSGS (XID);
  ````
+
+
+
+#### 2.7.4 MySQL扩展Journal技术
+
+***概要***
+
+````
+1. journal技术克服了JDBC Store的不足，也就是消息每次过来都要进行写库和读库；
+2. ActiveMQ Journal技术使用高速缓存的方法，大大提高了性能；
+3. 为了高性能，这种方式使用日志文件存储+数据库存储。先将消息持久到日志文件，等待一段时间再将未消费的消息持久到数据库。该方式要比JDBC性能要高。
+4. 举个例子：
+		生产者生产了1000条消息，这1000条消息会保存到journal文件，如果消费者的消费速度很快的情况下，在journal文件还没有同步到DB之前，消费者已经消费了90%的以上消息，那么这个时候只需要同步剩余的10%的消息到DB。如果消费者的速度很慢，这个时候journal文件可以使消息以批量方式写到DB。
+````
+
+````xml
+    <persistenceFactory>
+            <journalPersistenceAdapterFactory
+                journalLogFiles="4"
+                journalLogFileSize="32768"
+                useJournal="true"
+                useQuickJournal="true"
+                dataSource="#mysql-ds"
+                dataDirectory="activemq-data" />
+    </persistenceFactory>
+````
 

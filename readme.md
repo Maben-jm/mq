@@ -1453,6 +1453,123 @@ AMQ使用于activeMQ5.3以前的版本，现在的已经不再使用了。
     文件锁，表示当前获得kahadb读写权限的broker；
 ````
 
+#### 2.6.3 高可用
+
+***问题***
+
+>  引用消息队列之后如何保证其高可用行？
+
+***方案***
+
+> 基于Zookeeper和LevelDb搭建的ActiveMQ集群；集群仅仅提供主备方式的高可用集群功能，避免单点故障。
+
+#### 2.6.4 异步投递
+
+````
+异步投递特性：
+	1.异步发送可以让生产者发的更快。
+	2.如果异步投递不需要保证消息是否发送成功，发送者的效率会有所提高。
+代码改变：
+	 ActiveMQConnectionFactory activeMQConnectionFactory = new ActiveMQConnectionFactory(ACTIVEMQ_URL);        		    activeMQConnectionFactory.setUseAsyncSend(true);
+````
+
+#### 2.6.5 延时投递
+
+***四大属性***
+
+| propertyName         | type   | description        |
+| -------------------- | ------ | ------------------ |
+| AMQ_SCHEDULED_DELAY  | long   | 延迟投递的时间     |
+| AMQ_SCHEDULED_PRIOD  | long   | 重复投递的时间间隔 |
+| AMQ_SCHEDULED_REPEAT | int    | 重复投递次数       |
+| AMQ_SCHEDULED_CRON   | string | Cron表达式         |
+
+***配置设置***
+
+> ActiveMQ默认是不开启延时投递的；
+
+````xml
+    <broker xmlns="http://activemq.apache.org/schema/core" brokerName="localhost" dataDirectory="${activemq.data}"  schedulerSupport="true" >
+````
+
+***代码***
+
+```java
+package mq_001;
+
+import org.apache.activemq.ActiveMQConnectionFactory;
+import org.apache.activemq.ScheduledMessage;
+
+import javax.jms.*;
+
+public class JmsProduce {
+    public static final String ACTIVE_URL = "tcp://127.0.0.1:61616";
+    public static final String QUEUE_NAME = "queue01";
+    public static void main(String[] args) throws JMSException {
+        //1:创建连接工厂，才用默认的用户名和密码
+        final ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(ACTIVE_URL);
+        //2：通过连接工程，获取连接connection并启动访问
+        final Connection connection = factory.createConnection();
+        connection.start();
+        //3:创建会话session（两个参数：第一个是事物；第二个是签收）
+        final Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+        //4:创建目的地（具体是队列或者主题）
+        final Destination destination = session.createQueue(QUEUE_NAME);
+        //5:创建消息的生产者
+        final MessageProducer producer = session.createProducer(destination);
+        //6:通过生产者生产3条消息发送到MQ队列中
+        for (int i = 0; i < 4; i++) {
+            //7:创建消息
+            final TextMessage message = session.createTextMessage("msg----" + i);
+            message.setLongProperty(ScheduledMessage.AMQ_SCHEDULED_DELAY,1*1000);
+            message.setLongProperty(ScheduledMessage.AMQ_SCHEDULED_PERIOD,3*1000);
+            message.setIntProperty(ScheduledMessage.AMQ_SCHEDULED_REPEAT,1);
+
+            //8:通过生产者上传
+            producer.send(message);
+        }
+        //9:释放资源
+        producer.close();
+        session.close();
+        connection.close();
+
+        System.out.println("*************消息发布成功***********");
+
+    }
+}
+
+```
+
+#### 2.6.6 消息的重试机制
+
+***简介***
+
+````
+消费者收到消息，之后出现异常了，没有告诉broker确认收到该消息，broker会尝试再将该消息发送给消费者。尝试n次，如果消费者还是没有确认收到该消息，那么该消息将被放到死信队列重，之后broker不会再将该消息发送给消费者。
+````
+
+***消息重发的时间间隔和重发次数***
+
+> 时间间隔默认是1s；重发次数默认是6次，6次之后如果还不行就会被丢到死信队列中。
+
+***原因***
+
+````
+1.消费者在消费的时候使用事物，但是在消费过程中出现异常，直接rollback了
+2.消费者在消费的时候使用事物，但是没有设置commit
+3.消费者在消费的时候使用CLIENT_ACKNOWLEDGE，调用的recover方法
+````
+
+#### 2.6.7 死信队列
+
+***简介***
+
+````
+*:异常消息规避处理的集合，主要处理失败的消息。不管是queue还是topic，失败的消息都放到这个队列中。
+*: sharedDeadLetterStrategy  为死信队列单独指定名字
+*：individualDeadLetterStrategy  可以为queue和topic单独指定两个死信队列。还可以为某个话题，单独指定一个死信队列。
+````
+
 
 
 ### 2.7 消息持久化之MYSQL
@@ -1600,5 +1717,69 @@ create index ACTIVEMQ_MSGS_XIDX
                 dataSource="#mysql-ds"
                 dataDirectory="activemq-data" />
     </persistenceFactory>
+````
+
+### 2.8 集群搭建
+
+***zookeeper+levelDB+ActiveMQ***
+
+#### 2.8.1 shareFileSystem
+
+> 文件共享系统是ActiveMQ本身退出的一种基于文件的主从，一般不用，了解就行；
+
+#### 2.8.2 原理说明
+
+````
+1.使用zookeeper集群注册所有的ActiveMQ broker，但只有一个broker被定义为master，其他的broker处于待机状态被定义为slave；
+2.如果replicas=3,那么法定大小是(3/2)+1=2。Master将会存储并更新，然后等待（2-1）=1个slave存储和更新完成，才汇报success。
+3.集群中有一个node几点被定义为观察者。当一个新的Master被选中，你需要保障至少还有一个node在线能够找到拥有最新状态的node，这样的node才会被定义为Master。所以至少有3个节点。
+````
+
+#### 2.8.3 部署文档
+
+> 不要上来就着急干，干之前先想一下很重要！！！
+
+| 主机      | Zookeeper集群端口 | AMQ集群bind端口            | AMQ消息tcp端口 | AMQ管理控制台端口 | AMQ安装目录        |
+| --------- | ----------------- | -------------------------- | -------------- | ----------------- | ------------------ |
+| Locahost  | 2191              | bind="tcp://0.0.0.0:63631" | 61616          | 8161              | /mq_cluster/node1/ |
+| localhost | 2192              | bind="tcp://0.0.0.0:63632" | 61617          | 8162              | /mq_cluster/node2/ |
+| localhost | 2193              | bind="tcp://0.0.0.0:63633" | 61618          | 8163              | /mq_cluster/node3/ |
+
+#### 2.8.4 实际操作
+
+##### 2.8.4.1 修改AMQ管理控制台端口
+
+> 修改${ActiveMQ_HOME}/conf/jetty.xml文件中的jettyPort的bean
+
+***注意：*** 在activemq.xml中有引用jetty.xml，标签是import；所以jetty.xml不是单独存在的。
+
+##### 2.8.4.2 保持brokerName相同
+
+> 在activemq.xml中配置brokerName，让节点保持一致。(名称随便)
+
+````xml
+<broker xmlns="http://activemq.apache.org/schema/core" brokerName="localhost" dataDirectory="${activemq.data}">
+````
+
+##### 2.8.4.3 持久化配置LevelDB
+
+````xml
+<persistenceAdaper>
+  <relicatedLevelDB 
+  	directory="${activemq.data}/leveldb"
+    replicas="3"
+    bind="tcp://0.0.0.0:63631"
+    zkAddress="localhost:2191,localhost:2192,localhost:2193"
+    hostname="mq-server"
+    sync="local_disk"
+    zkPath="/activemq/leveldb-stores"
+                   />
+</persistenceAdaper>
+````
+
+##### 2.8.4.4 Java代码链接
+
+````java
+public static final String ACTIVE_URL = "failover:(tcp://broker1:61616,tcp://broker2:61616,tcp://broker3:61616)";
 ````
 

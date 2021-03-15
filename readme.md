@@ -8,12 +8,12 @@
 
 ## 1.MQ目前流行的几种框架
 
-| 语言     | 编程语言 | JMS规范     | 吞吐量 | 事物 |
-| -------- | -------- | :---------- | ------ | ---- |
-| kafka    | Java     |             | 十万级 |      |
-| activeMq | Java     | 符合JMS规范 | 万级   | 支持 |
-| rabbitMq | erlang   | 符合JMS规范 | 万级   |      |
-| rockeMq  | Java     |             | 十万级 |      |
+| 语言     | 编程语言 | JMS规范     | 吞吐量 | 事物 | 可用性               |
+| -------- | -------- | :---------- | ------ | ---- | -------------------- |
+| kafka    | Scala    |             | 十万级 |      | 非常高（分布式架构） |
+| activeMq | Java     | 符合JMS规范 | 万级   | 支持 | 高（主从）           |
+| rabbitMq | erlang   | 符合JMS规范 | 万级   |      | 高（主从）           |
+| rockeMq  | Java     |             | 十万级 |      | 非常高（分布式架构） |
 
 ##  2.activeMQ学习
 
@@ -1782,4 +1782,83 @@ create index ACTIVEMQ_MSGS_XIDX
 ````java
 public static final String ACTIVE_URL = "failover:(tcp://broker1:61616,tcp://broker2:61616,tcp://broker3:61616)";
 ````
+
+## 3. RocketMQ学习
+
+### 3.1目录简介
+
+* bin：启动脚本，包括shell脚本和cmd脚本
+* conf：实例配置文件，包括broker配置文件，logback配置文件等
+* lib：依赖jar包，包括Netty，fastJson，commons-long等依赖jar包
+
+### 3.2 启动RocketMQ
+
+#### 3.2.1 启动NameServer
+
+````shell
+#1.启动NameServer
+nohup  sh bin/mqnamesrv &
+#2.查看启动日志
+tail -f ~/logs/rocketmqlogs/namesrv.log
+#3.关闭命令
+sh bin/mqshutdown namesrv
+````
+
+#### 3.2.2 启动Broker
+
+````shell
+#1.启动broker
+nohup  sh bin/mqbroker -n localhost:9876 &
+#2.查看日志
+tail -f ~/logs/rocketmqlogs/broker.log
+#3.关闭命令
+sh bin/mqshutdown broker
+````
+
+***启动可能问题***
+
+>  RocketMQ默认的虚拟机内存较大，启动broker很有可能因为内存太小而失败，所以在测试阶段可以先修改下面的配置：
+
+> 编辑「runbroker.sh」 和 「runserver.sh」修改默认JVM的大小
+
+````shell
+##################vim runbroker.sh#################
+#===========================================================================================
+# JVM Configuration
+#===========================================================================================
+JAVA_OPT="${JAVA_OPT} -server -Xms8g -Xmx8g -Xmn4g"
+JAVA_OPT="${JAVA_OPT} -XX:+UseG1GC -XX:G1HeapRegionSize=16m -XX:G1ReservePercent=25 -XX:InitiatingHeapOccupancyPercent=30 -XX:SoftRefLRUPolicyMSPerMB=0"
+JAVA_OPT="${JAVA_OPT} -verbose:gc -Xloggc:/dev/shm/mq_gc_%p.log -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCApplicationStoppedTime -XX:+PrintAdaptiveSizePolicy"
+````
+
+````shell
+#################vim runserver.sh#####################
+#===========================================================================================
+# JVM Configuration
+#===========================================================================================
+JAVA_OPT="${JAVA_OPT} -server -Xms4g -Xmx4g -Xmn2g -XX:MetaspaceSize=128m -XX:MaxMetaspaceSize=320m"
+JAVA_OPT="${JAVA_OPT} -XX:+UseConcMarkSweepGC -XX:+UseCMSCompactAtFullCollection -XX:CMSInitiatingOccupancyFraction=70 -XX:+CMSParallelRemarkEnabled -XX:SoftRefLRUPolicyMSPerMB=0 -XX:+CMSClassUnloadingEnabled -XX:SurvivorRatio=8  -XX:-UseParNewGC"
+````
+
+#### 3.2.3 测试RocketMQ
+
+***发送消息测试***
+
+````shell
+#1.设置环境变量
+export NAMESRV_ADDR=localhost:9876
+#2.使用安装包的demo发送消息
+sh bin/tools.sh org.apache.rocketmq.example.quickstart.Producer
+````
+
+***接收消息测试***
+
+````shell
+#1.设置环境变量
+export NAMESRV_ADDR=localhost:9876
+#2.接收消息
+sh bin/tools.sh org.apache.rocketmq.example.quickstart.Consumer
+````
+
+
 

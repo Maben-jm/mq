@@ -1860,5 +1860,65 @@ export NAMESRV_ADDR=localhost:9876
 sh bin/tools.sh org.apache.rocketmq.example.quickstart.Consumer
 ````
 
+### 3.3 集群搭建方式
+
+#### 3.3.1 集群特点
+
+````
+1.NameServer是一个几乎无状态节点，可集群部署，节点之间无任何消息同步。
+2.Broker部署相对复杂，Broker分master和slave，一个master可以对应多个slave，但是一个slave只能对应一个master；
+	master与slave的对应关系通过指定相同的brokerName，不同的brokerId来定义，brokerId为0表示master，非0表示slave；
+	master也可以部署多个。每个broker与NameServer集群的所有节点建立长连接，定时注册topic信息到所有NameServer；
+3.producer与NameServer集群中的一个节点（随机选择）建立长连接，定期从NameServer中取topic路由信息，并向提供topic服务的master建立长连接，且定时想master发送心跳。
+	producer完全无状态，可集群部署。
+4.consumer与NameServer集群中的一个节点（随机选择）建立长连接，定期从NameServer中去topic路由信息，并向提供topic服务的master，slave建立长连接，且定时想master和slave发送心跳。
+	consumer完全无状态，可集群部署。
+	consumer既可以想master订阅消息，也可以想slave订阅消息，订阅规则由broker决定。
+````
+
+#### 3.3.2 集群模式
+
+***单master模式***
+
+````
+这种方式风险较大，一旦broker重启或者宕机，会导致整个服务不可用。
+````
+
+***多master模式***
+
+````
+一个集群无slave，全是master，例如有俩个master或者三个master，这种模式是有优缺点的：
+	*优点：配置简单，单个master宕机或者重启对应用无影响
+	*缺点：单台机器宕机期间，这台机器上违背消费的消息在机器恢复之前不可被订阅，消息实时性受到影响。
+````
+
+***多master多slave模式（异步）***
+
+````
+每个master配置一个slave，有多对master-slave，采用异步复制方式，主备有短暂消息延迟（毫秒级）；优缺点如下：
+	*优点：即使磁盘损坏，消息丢失的非常少，并且消息实时性不会受到影响，同时master宕机之后，消费者任然可以从slave中消费消息，而且此过程对应用透明，无需人工干预，性能同多master模式一样。
+	*缺点：master宕机时，会存在少量的消息还未同步到slave中，导致少量消息丢失。
+````
+
+***多master多slave模式（同步）***
+
+````
+每个master配置一个slave，有多对master-slave，采用同步双写模式，也就是说只有主备都写成功了，才返回成功。优缺点如下：
+	*优点：数据与服务都不存在单点故障，Master宕机的情况下，消息无延迟，服务可用性和数据可用性都非常高。
+	*缺点：性能比异步模式的略低，并且目前版本在主节点宕机后，备机不能自动升级为主机。
+````
+
+#### 3.3.3 双主双从集群搭建
+
+***工作流程***
+
+````
+1.启动NameServer，NameServer启动后监听端口，等待broker，producer，consumer连上来，相当于一个控制中心。
+2.broker启动成功后跟所有的NameServer建立长连接，定时发送心跳包。注册成功后，NameServer集群就有了topic和broker的映射关系。
+3.收到消息前，先创建topic，创建topic时需要指定该topic要存储在那些broker上，也可以在发送消息时自动常见topic。
+4.producer发送消息，启动时先跟NameServer中的某一台建立长连接，并从NameServer中获取当前发送的topic存放在那些broker上，轮询从队列列表中选择一个队列，然后与队列所在的broker建立长连接从而想broker中发送消息。
+5.consumer和producer类似，跟NameServer中的某一台建立长连接，获取当前订阅topic存放在那些broker上，然后直接跟broker建立连接通道，开始消费消息。
+````
+
 
 

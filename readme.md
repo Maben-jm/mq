@@ -259,7 +259,7 @@ public class JmsConsumer2 {
 
 #### 2.3.3 topic格式
 
-##### 2.3.3.1 消费者（topic）
+##### 2.3.3.1 生产者（topic）
 
 ````java
 package mq_002;
@@ -1785,6 +1785,10 @@ public static final String ACTIVE_URL = "failover:(tcp://broker1:61616,tcp://bro
 
 ## 3. RocketMQ学习
 
+### 3.0 结构介绍
+
+![](./images/1.jpg)
+
 ### 3.1目录简介
 
 * bin：启动脚本，包括shell脚本和cmd脚本
@@ -1809,6 +1813,7 @@ sh bin/mqshutdown namesrv
 ````shell
 #1.启动broker
 nohup  sh bin/mqbroker -n localhost:9876 &
+nohup  sh bin/mqbroker -c conf/broker.conf &
 #2.查看日志
 tail -f ~/logs/rocketmqlogs/broker.log
 #3.关闭命令
@@ -2355,5 +2360,1243 @@ nohup sh mqbroker -c /usr/local/rocketmq/conf/2m-2s-sync/broker-a-s.properties &
 
 ````bash
 jps
+````
+
+### 3.4 消息发送样例
+
+#### 3.4.0 quick start
+
+##### 3.4.0.1 发送端
+
+````java
+package com.maben.rocketmq001.rocketmq001_quickStart;
+
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+
+/**
+ * This class demonstrates how to send messages to brokers using provided {@link DefaultMQProducer}.
+ */
+public class Producer {
+    public static void main(String[] args) throws MQClientException, InterruptedException {
+
+        /*
+         * Instantiate with a producer group name.
+         */
+        DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
+
+        /*
+         * Specify name server addresses.
+         * <p/>
+         *
+         * Alternatively, you may specify name server addresses via exporting environmental variable: NAMESRV_ADDR
+         * <pre>
+         * {@code
+         * producer.setNamesrvAddr("name-server1-ip:9876;name-server2-ip:9876");
+         * }
+         * </pre>
+         */
+        producer.setNamesrvAddr("localhost:9876");
+        /*
+         * Launch the instance.
+         */
+        producer.start();
+
+        for (int i = 0; i < 10; i++) {
+            try {
+
+                /*
+                 * Create a message instance, specifying topic, tag and message body.
+                 */
+                Message msg = new Message("TopicTest" /* Topic */,
+                    "TagA" /* Tag */,
+                    ("Hello RocketMQ " + i).getBytes(RemotingHelper.DEFAULT_CHARSET) /* Message body */
+                );
+
+                /*
+                 * Call send message to deliver message to one of brokers.
+                 */
+                SendResult sendResult = producer.send(msg);
+
+                System.out.printf("%s%n", sendResult);
+            } catch (Exception e) {
+                e.printStackTrace();
+                Thread.sleep(1000);
+            }
+        }
+
+        /*
+         * Shut down once the producer instance is not longer in use.
+         */
+        producer.shutdown();
+    }
+}
+````
+
+##### 3.4.0.2 消费端
+
+````java
+package com.maben.rocketmq001.rocketmq001_quickStart;
+
+import java.util.List;
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
+
+/**
+ * This example shows how to subscribe and consume messages using providing {@link DefaultMQPushConsumer}.
+ */
+public class Consumer {
+
+    public static void main(String[] args) throws InterruptedException, MQClientException {
+
+        /*
+         * Instantiate with specified consumer group name.
+         */
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name_4");
+
+        /*
+         * Specify name server addresses.
+         * <p/>
+         *
+         * Alternatively, you may specify name server addresses via exporting environmental variable: NAMESRV_ADDR
+         * <pre>
+         * {@code
+         * consumer.setNamesrvAddr("name-server1-ip:9876;name-server2-ip:9876");
+         * }
+         * </pre>
+         */
+        consumer.setNamesrvAddr("localhost:9876");
+        /*
+         * Specify where to start in case the specified consumer group is a brand new one.
+         */
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+
+        /*
+         * Subscribe one more more topics to consume.
+         */
+        consumer.subscribe("TopicTest", "*");
+
+        /*
+         *  Register callback to execute on arrival of messages fetched from brokers.
+         */
+        consumer.registerMessageListener(new MessageListenerConcurrently() {
+
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs,
+                ConsumeConcurrentlyContext context) {
+                System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msgs);
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
+        });
+
+        /*
+         *  Launch the consumer instance.
+         */
+        consumer.start();
+
+        System.out.printf("Consumer Started.%n");
+    }
+}
+````
+
+
+
+#### 3.4.1  简单样例
+
+**基本样例部分消息生产者分为：同步发送、异步发送、单向发送。**
+
+#####  3.4.1.1  同步发送端
+
+**同步消息发送端：** 就是说客户端发送消息后会线程阻塞，直到RocketMQ给该客户端相应结果；
+
+**也就是说同步消息发送端还是比较靠谱的，通常被用作发送重要的消息，比方说短信。。。**
+
+````java
+package com.maben.rocketmq001.rocketmq002_base.sys;
+
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+
+/**
+ * 同步发送端
+ */
+public class Producer {
+    public static void main(String[] args) throws MQClientException, InterruptedException {
+
+        DefaultMQProducer producer = new DefaultMQProducer("ProducerGroupName");
+        producer.setNamesrvAddr("localhost:9876");
+        producer.start();
+
+        for (int i = 0; i < 128; i++)
+            try {
+                {
+                    Message msg = new Message("TopicTest",
+                        "TagA",
+                        "OrderID188",
+                        "Hello world".getBytes(RemotingHelper.DEFAULT_CHARSET));
+                    SendResult sendResult = producer.send(msg);
+                    System.out.printf("%s%n", sendResult);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+        producer.shutdown();
+    }
+}
+
+````
+
+##### 3.4.1.2 异步消息发送端
+
+**异步消息发送端，对RocketMQ的响应不在意；适用于对相应时间敏感的场景**
+
+````java
+package com.maben.rocketmq001.rocketmq002_base.async;
+
+import java.io.UnsupportedEncodingException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendCallback;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+
+/**
+ * 异步发送端
+ */
+public class AsyncProducer {
+    public static void main(
+        String[] args) throws MQClientException, InterruptedException, UnsupportedEncodingException {
+
+        DefaultMQProducer producer = new DefaultMQProducer("Jodie_Daily_test");
+        producer.setNamesrvAddr("localhost:9876");
+        producer.start();
+        producer.setRetryTimesWhenSendAsyncFailed(0);
+
+        int messageCount = 100;
+//        保证所有的producer发送消息的回调方法都执行完了在停止producer服务
+        final CountDownLatch countDownLatch = new CountDownLatch(messageCount);
+        for (int i = 0; i < messageCount; i++) {
+            try {
+                final int index = i;
+                Message msg = new Message("Jodie_topic_1023",
+                    "TagA",
+                    "OrderID188",
+                    "Hello world".getBytes(RemotingHelper.DEFAULT_CHARSET));
+                producer.send(msg, new SendCallback() {
+                    @Override
+                    public void onSuccess(SendResult sendResult) {
+                        countDownLatch.countDown();
+                        System.out.printf("%-10d OK %s %n", index, sendResult.getMsgId());
+                    }
+
+                    @Override
+                    public void onException(Throwable e) {
+                        countDownLatch.countDown();
+                        System.out.printf("%-10d Exception %s %n", index, e);
+                        e.printStackTrace();
+                    }
+                });
+                System.out.println("发送完成！！");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        countDownLatch.await(5, TimeUnit.SECONDS);
+        producer.shutdown();
+    }
+}
+````
+
+##### 3.4.1.3 发送单向消息
+
+**发送消息，不关心发送结果；比方说日志记录。。。**
+
+````java
+package com.maben.rocketmq001.base.producer;
+
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+
+import java.util.concurrent.TimeUnit;
+
+/**
+ * 发送单向消息
+ */
+public class OneWayProducer {
+    public static void main(String[] args)throws Exception{
+        final DefaultMQProducer producer = new DefaultMQProducer("group1");
+        producer.setNamesrvAddr("localhost:9876");
+        producer.start();
+        for (int i = 0; i < 10; i++) {
+            final Message msg = new Message("TopicTest" /* Topic */,
+                    "Tag3" /* Tag */,
+                    ("one way  " + i).getBytes(RemotingHelper.DEFAULT_CHARSET) /* Message body */
+            );
+            producer.sendOneway(msg);
+            TimeUnit.SECONDS.sleep(1);
+        }
+        producer.shutdown();
+    }
+}
+````
+
+##### 3.4.1.4 消息接收端
+
+* pushConsumer
+
+````java
+package com.maben.rocketmq001.rocketmq002_base;
+
+import java.util.List;
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
+
+/**
+ * 由broker主动给你推消息，客户端自己只需要被动的监听消息就可以了。
+ */
+public class PushConsumer {
+
+    public static void main(String[] args) throws InterruptedException, MQClientException {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("CID_JODIE_1");
+        consumer.setNamesrvAddr("localhost:9876");
+        consumer.subscribe("TopicTest", "*");
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+        //wrong time format 2017_0422_221800
+        consumer.setConsumeTimestamp("20181109221800");
+        consumer.registerMessageListener(new MessageListenerConcurrently() {
+
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs, ConsumeConcurrentlyContext context) {
+                System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msgs);
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
+        });
+        consumer.start();
+        System.out.printf("Consumer Started.%n");
+    }
+}
+````
+
+* pullConsumer(三类)
+
+````java
+package com.maben.rocketmq001.rocketmq002_base;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
+import org.apache.rocketmq.client.consumer.PullResult;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.message.MessageQueue;
+
+/**
+ * 需要consumer主动向broker发送消息来拉取消息 一般不用
+ */
+public class PullConsumer {
+    private static final Map<MessageQueue, Long> OFFSE_TABLE = new HashMap<MessageQueue, Long>();
+
+    public static void main(String[] args) throws MQClientException {
+        DefaultMQPullConsumer consumer = new DefaultMQPullConsumer("please_rename_unique_group_name_5");
+        consumer.setNamesrvAddr("127.0.0.1:9876");
+        consumer.start();
+
+        Set<MessageQueue> mqs = consumer.fetchSubscribeMessageQueues("TopicTest");
+        for (MessageQueue mq : mqs) {
+            System.out.printf("Consume from the queue: %s%n", mq);
+            SINGLE_MQ:
+            while (true) {
+                try {
+                    PullResult pullResult =
+                        consumer.pullBlockIfNotFound(mq, null, getMessageQueueOffset(mq), 32);
+                    System.out.printf("%s%n", pullResult);
+                    putMessageQueueOffset(mq, pullResult.getNextBeginOffset());
+                    switch (pullResult.getPullStatus()) {
+                        case FOUND:
+                            break;
+                        case NO_MATCHED_MSG:
+                            break;
+                        case NO_NEW_MSG:
+                            break SINGLE_MQ;
+                        case OFFSET_ILLEGAL:
+                            break;
+                        default:
+                            break;
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        consumer.shutdown();
+    }
+
+    private static long getMessageQueueOffset(MessageQueue mq) {
+        Long offset = OFFSE_TABLE.get(mq);
+        if (offset != null)
+            return offset;
+
+        return 0;
+    }
+
+    private static void putMessageQueueOffset(MessageQueue mq, long offset) {
+        OFFSE_TABLE.put(mq, offset);
+    }
+
+}
+````
+
+````java
+package com.maben.rocketmq001.rocketmq002_base;
+
+import java.util.List;
+import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
+
+/**
+ * 简化版pull模式：
+ *  相当于是lite这个人帮我们做了响应的offset管理
+ */
+public class LitePullConsumerSubscribe {
+
+    public static volatile boolean running = true;
+
+    public static void main(String[] args) throws Exception {
+        DefaultLitePullConsumer litePullConsumer = new DefaultLitePullConsumer("lite_pull_consumer_test");
+        litePullConsumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+        litePullConsumer.subscribe("TopicTest", "*");
+        litePullConsumer.start();
+        try {
+            while (running) {
+                List<MessageExt> messageExts = litePullConsumer.poll();
+                System.out.printf("%s%n", messageExts);
+            }
+        } finally {
+            litePullConsumer.shutdown();
+        }
+    }
+}
+````
+
+````java
+package com.maben.rocketmq001.rocketmq002_base;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
+import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.message.MessageQueue;
+
+/**
+ * 这里和LitePullConsumerSubscribe最大的区别是可以指定起始的messageQueue去拉取
+ */
+public class LitePullConsumerAssign {
+
+    public static volatile boolean running = true;
+
+    public static void main(String[] args) throws Exception {
+        DefaultLitePullConsumer litePullConsumer = new DefaultLitePullConsumer("please_rename_unique_group_name");
+        litePullConsumer.setAutoCommit(false);
+        litePullConsumer.start();
+        Collection<MessageQueue> mqSet = litePullConsumer.fetchMessageQueues("TopicTest");
+        List<MessageQueue> list = new ArrayList<>(mqSet);
+        List<MessageQueue> assignList = new ArrayList<>();
+        for (int i = 0; i < list.size() / 2; i++) {
+            assignList.add(list.get(i));
+        }
+        litePullConsumer.assign(assignList);
+        litePullConsumer.seek(assignList.get(0), 10);
+        try {
+            while (running) {
+                List<MessageExt> messageExts = litePullConsumer.poll();
+                System.out.printf("%s %n", messageExts);
+                litePullConsumer.commitSync();
+            }
+        } finally {
+            litePullConsumer.shutdown();
+        }
+
+    }
+}
+````
+
+#### 3.4.2 顺序消息
+
+**顺序消息不是保证全局有序，而是说的是局部有序。比方说QQ聊天，只保证和统一会话的消息顺序，针对其他的没有顺序**
+
+##### 3.4.2.1 发送端
+
+````java
+package com.maben.rocketmq001.rocketmq002_ordermessage;
+
+import org.apache.rocketmq.client.exception.MQBrokerException;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.MQProducer;
+import org.apache.rocketmq.client.producer.MessageQueueSelector;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.common.message.MessageQueue;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+import org.apache.rocketmq.remoting.exception.RemotingException;
+
+import java.io.UnsupportedEncodingException;
+import java.util.List;
+
+/**
+ * 顺序消费生产者
+ *  主要是通过select()方法自定义实现保证针对同一个orderId的消息，都是走相同的messageQueue；因为针对某一个messageQueue是有序的，以此来保证有序行。
+ */
+public class Producer {
+    public static void main(String[] args) throws UnsupportedEncodingException {
+        try {
+            MQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
+            ((DefaultMQProducer) producer).setNamesrvAddr("localhost:9876");
+            producer.start();
+            for (int i = 0; i < 10; i++) {
+                final int orderId = i;
+                for (int j = 0; j < 5; j++) {
+                    Message msg = new Message("OrderTopicTest", "order_"+orderId, "KEY" + i, ("order_"+orderId+" step " + j).getBytes(RemotingHelper.DEFAULT_CHARSET));
+                    SendResult sendResult = producer.send(msg, new MessageQueueSelector() {
+                        @Override
+                        public MessageQueue select(List<MessageQueue> mqs, Message msg, Object arg) {
+                            Integer orderId = (Integer) arg;
+                            int index = orderId % mqs.size();
+                            return mqs.get(index);
+                        }
+                    }, orderId);
+                    System.out.printf("%s%n", sendResult);
+                }
+            }
+            producer.shutdown();
+        } catch (MQClientException | RemotingException | MQBrokerException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+````
+
+##### 3.4.2.2 接收端
+
+````java
+package com.maben.rocketmq001.rocketmq002_ordermessage;
+
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeOrderlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeOrderlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerOrderly;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * 顺序消息的消费端
+ *  主要是通过MessageListenerOrderly实现类来保证消费消息的顺序性；
+ */
+public class Consumer {
+
+    public static void main(String[] args) throws MQClientException {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name_3");
+        consumer.setNamesrvAddr("localhost:9876");
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+
+        consumer.subscribe("OrderTopicTest", "*");
+        consumer.registerMessageListener(new MessageListenerOrderly() {
+            @Override
+            public ConsumeOrderlyStatus consumeMessage(List<MessageExt> msgs, ConsumeOrderlyContext context) {
+                context.setAutoCommit(true);
+                for (int i = 0; i < msgs.size(); i++) {
+                    final MessageExt messageExt = msgs.get(i);
+                    System.out.println("接收到消息："+new String(messageExt.getBody()));
+                }
+                return ConsumeOrderlyStatus.SUCCESS;
+            }
+        });
+        consumer.start();
+        System.out.printf("Consumer Started.%n");
+    }
+
+}
+````
+
+#### 3.4.3 广播消息
+
+> 值针对消费者
+
+````java
+package com.maben.rocketmq001.rocketmq004_broadcast;
+
+import java.util.List;
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.protocol.heartbeat.MessageModel;
+
+/**
+ * 广播模式消费端
+ *      主要： consumer.setMessageModel(MessageModel.BROADCASTING);
+ *  MessageModel.CLUSTERING :集群模式（针对同组内的消费者集群，只能有一个消费者消费同一条消息）
+ *  MessageModel.BROADCASTING :广播模式（不针对组，对所有消费者都消费同一条消息）
+ */
+public class PushConsumer {
+
+    public static void main(String[] args) throws InterruptedException, MQClientException {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name_1");
+        consumer.setNamesrvAddr("localhost:9876");
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+
+        consumer.setMessageModel(MessageModel.BROADCASTING);
+
+        consumer.subscribe("TopicTest", "*");
+
+        consumer.registerMessageListener(new MessageListenerConcurrently() {
+
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs,
+                ConsumeConcurrentlyContext context) {
+                System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msgs);
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
+        });
+
+        consumer.start();
+        System.out.printf("Broadcast Consumer Started.%n");
+    }
+}
+````
+
+#### 3.4.4 延时消息
+
+> 只针对生产者！
+
+````java
+package com.maben.rocketmq001.rocketmq005_delay;
+
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+
+/**
+ * 延时消息发送者
+ *  精髓：msg.setDelayTimeLevel(3);
+ */
+public class Producer {
+    public static void main(String[] args) throws MQClientException, InterruptedException {
+
+        DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
+
+        producer.setNamesrvAddr("localhost:9876");
+        producer.start();
+
+        for (int i = 0; i < 10; i++) {
+            try {
+
+                Message msg = new Message("TopicTest" /* Topic */,
+                    "TagA" /* Tag */,
+                    ("Hello RocketMQ " + i).getBytes(RemotingHelper.DEFAULT_CHARSET) /* Message body */
+                );
+                //messageDelayLevel=1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h
+                msg.setDelayTimeLevel(3);
+                SendResult sendResult = producer.send(msg);
+
+                System.out.printf("%s%n", sendResult);
+            } catch (Exception e) {
+                e.printStackTrace();
+                Thread.sleep(1000);
+            }
+        }
+
+        producer.shutdown();
+    }
+}
+````
+
+**延时级别可以在集群配置中查看,可以在conf中修改**
+
+![](./images/2.png)
+
+**注意：开源版只支持按照级别划分的延时，不支持自己特定的！！！**
+
+#### 3.4.5 批量消息
+
+> 将多条消息合并成一条消息发出去。以达到减少IO，提高吞吐量的目的。
+>
+> 只是针对生产者！
+
+````java
+package com.maben.rocketmq001.rocketmq006_batch;
+
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.common.message.Message;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 简单批量发送
+ *  限制：
+ *      大小：不超过4194304
+ *      topic： same topic
+ */
+public class SimpleBatchProducer {
+
+    public static void main(String[] args) throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("BatchProducerGroupName");
+        producer.setNamesrvAddr("localhost:9876");
+        producer.start();
+
+        //If you just send messages of no more than 1MiB at a time, it is easy to use batch
+        //Messages of the same batch should have: same topic, same waitStoreMsgOK and no schedule support
+        String topic = "TopicTest";
+        List<Message> messages = new ArrayList<>();
+        messages.add(new Message(topic, "Tag", "OrderID001", "Hello world 0".getBytes()));
+        messages.add(new Message(topic, "Tag", "OrderID002", "Hello world 1".getBytes()));
+        messages.add(new Message(topic, "Tag", "OrderID003", "Hello world 2".getBytes()));
+
+        producer.send(messages);
+        producer.shutdown();
+    }
+}
+````
+
+**消除大小限制**
+
+````java
+package com.maben.rocketmq001.rocketmq006_batch;
+
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.common.message.Message;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+public class SplitBatchProducer {
+
+    public static void main(String[] args) throws Exception {
+
+        DefaultMQProducer producer = new DefaultMQProducer("BatchProducerGroupName");
+        producer.setNamesrvAddr("localhost:9876");
+        producer.start();
+
+        //large batch
+        String topic = "TopicTest";
+        List<Message> messages = new ArrayList<>(100 * 1000);
+        for (int i = 0; i < 100 * 1000; i++) {
+            messages.add(new Message(topic, "Tag", "OrderID" + i, ("Hello world " + i).getBytes()));
+        }
+//        producer.send(messages);
+
+        //split the large batch into small ones:
+        ListSplitter splitter = new ListSplitter(messages);
+        while (splitter.hasNext()) {
+            List<Message> listItem = splitter.next();
+            producer.send(listItem);
+        }
+
+        producer.shutdown();
+    }
+
+}
+
+class ListSplitter implements Iterator<List<Message>> {
+    private int sizeLimit = 10 * 1000;
+    private final List<Message> messages;
+    private int currIndex;
+
+    public ListSplitter(List<Message> messages) {
+        this.messages = messages;
+    }
+
+    @Override
+    public boolean hasNext() {
+        return currIndex < messages.size();
+    }
+
+    @Override
+    public List<Message> next() {
+        int nextIndex = currIndex;
+        int totalSize = 0;
+        for (; nextIndex < messages.size(); nextIndex++) {
+            Message message = messages.get(nextIndex);
+            int tmpSize = message.getTopic().length() + message.getBody().length;
+            Map<String, String> properties = message.getProperties();
+            for (Map.Entry<String, String> entry : properties.entrySet()) {
+                tmpSize += entry.getKey().length() + entry.getValue().length();
+            }
+            //for log overhead
+            tmpSize = tmpSize + 20;
+            if (tmpSize > sizeLimit) {
+                //it is unexpected that single message exceeds the sizeLimit
+                //here just let it go, otherwise it will block the splitting process
+                if (nextIndex - currIndex == 0) {
+                    //if the next sublist has no element, add this one and then break, otherwise just break
+                    nextIndex++;
+                }
+                break;
+            }
+            if (tmpSize + totalSize > sizeLimit) {
+                break;
+            } else {
+                totalSize += tmpSize;
+            }
+
+        }
+        List<Message> subList = messages.subList(currIndex, nextIndex);
+        currIndex = nextIndex;
+        return subList;
+    }
+
+    @Override
+    public void remove() {
+        throw new UnsupportedOperationException("Not allowed to remove");
+    }
+}
+````
+
+#### 3.4.6 过滤消息
+
+> 一种是通过【tag】过滤，一种是通过【SQL】过滤；
+
+##### 3.4.6.1 按照tag过滤
+
+**生产者**
+
+````java
+package com.maben.rocketmq001.rocketmq007_filter;
+
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+
+public class TagFilterProducer {
+
+    public static void main(String[] args) throws Exception {
+
+        DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
+        producer.setNamesrvAddr("localhost:9876");
+        producer.start();
+
+        String[] tags = new String[] {"TagA", "TagB", "TagC"};
+
+        for (int i = 0; i < 15; i++) {
+            Message msg = new Message("TagFilterTest",
+                tags[i % tags.length],
+                "Hello world".getBytes(RemotingHelper.DEFAULT_CHARSET));
+
+            SendResult sendResult = producer.send(msg);
+            System.out.printf("%s%n", sendResult);
+        }
+
+        producer.shutdown();
+    }
+}
+````
+
+**消费者**
+
+````java
+package com.maben.rocketmq001.rocketmq007_filter;
+
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.common.message.MessageExt;
+
+import java.io.IOException;
+import java.util.List;
+
+/**
+ * 通过tag过滤
+ *  这里只会受到【TagA，TagC】的消息，而【TagB】的消息不会受到
+ */
+public class TagFilterConsumer {
+
+    public static void main(String[] args) throws InterruptedException, MQClientException, IOException {
+
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name");
+        consumer.setNamesrvAddr("localhost:9876");
+        consumer.subscribe("TagFilterTest", "TagA || TagC");
+
+        consumer.registerMessageListener(new MessageListenerConcurrently() {
+
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs,
+                ConsumeConcurrentlyContext context) {
+                System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msgs);
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
+        });
+
+        consumer.start();
+
+        System.out.printf("Consumer Started.%n");
+    }
+}
+````
+
+##### 3.4.6.2 按照sql过滤
+
+> SQL是支持SQL92的语法；
+>
+> 过滤是在broker端过滤的；
+
+**注意：需要开启enablePropertyFilter=true**
+
+**生产者**
+
+````java
+package com.maben.rocketmq001.rocketmq007_filter;
+
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+
+public class SqlFilterProducer {
+
+    public static void main(String[] args) throws Exception {
+
+        DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
+				producer.setNamesrvAddr("localhost:9876");
+        producer.start();
+
+        String[] tags = new String[] {"TagA", "TagB", "TagC"};
+
+        for (int i = 0; i < 10; i++) {
+            Message msg = new Message("SqlFilterTest",
+                tags[i % tags.length],
+                ("Hello RocketMQ " + i).getBytes(RemotingHelper.DEFAULT_CHARSET)
+            );
+            msg.putUserProperty("a", String.valueOf(i));
+
+            SendResult sendResult = producer.send(msg);
+            System.out.printf("%s%n", sendResult);
+        }
+
+        producer.shutdown();
+    }
+}
+````
+
+**消费者**
+
+````java
+package com.maben.rocketmq001.rocketmq007_filter;
+
+import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.MessageSelector;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
+import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
+import org.apache.rocketmq.common.message.MessageExt;
+
+import java.util.List;
+
+/**
+ * sql是SQL92的语法
+ */
+public class SqlFilterConsumer {
+
+    public static void main(String[] args) throws Exception {
+
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name");
+				consumer.setNamesrvAddr("localhost:9876");
+      
+        // Don't forget to set enablePropertyFilter=true in broker
+        consumer.subscribe("SqlFilterTest",
+            MessageSelector.bySql("(TAGS is not null and TAGS in ('TagA', 'TagB'))" +
+                "and (a is not null and a between 0 and 3)"));
+
+        consumer.registerMessageListener(new MessageListenerConcurrently() {
+
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs,
+                ConsumeConcurrentlyContext context) {
+                System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msgs);
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
+        });
+
+        consumer.start();
+        System.out.printf("Consumer Started.%n");
+    }
+}
+````
+
+#### 3.4.7 事物消息
+
+> 事物消息只跟生产者有关，和消费者没有关系。
+
+##### 3.5.7.1 事物消息流程图
+
+![](./images/3.png)
+
+上图说明了事务消息的大致方案，其中分为两个流程：正常事务消息的发送及提交、事务消息的补偿流程。
+
+**事务消息发送及提交**
+
+(1) 发送消息（half消息）。
+
+(2) 服务端响应消息写入结果。
+
+(3) 根据发送结果执行本地事务（如果写入失败，此时half消息对业务不可见，本地逻辑不执行）。
+
+(4) 根据本地事务状态执行Commit或者Rollback（Commit操作生成消息索引，消息对消费者可见）
+
+**2）事务补偿**
+
+(1) 对没有Commit/Rollback的事务消息（pending状态的消息），从服务端发起一次“回查”
+
+(2) Producer收到回查消息，检查回查消息对应的本地事务的状态
+
+(3) 根据本地事务状态，重新Commit或者Rollback
+
+其中，补偿阶段用于解决消息Commit或者Rollback发生超时或者失败的情况。
+
+**3）事务消息状态**
+
+事务消息共有三种状态，提交状态、回滚状态、中间状态：
+
+* TransactionStatus.CommitTransaction: 提交事务，它允许消费者消费此消息。
+* TransactionStatus.RollbackTransaction: 回滚事务，它代表该消息将被删除，不允许被消费。
+* TransactionStatus.Unknown: 中间状态，它代表需要检查消息队列来确定状态。
+
+##### 3.5.7.2 举例说明
+
+![](./images/4.png)
+
+
+
+##### 3.5.7.3 消息发送者
+
+````java
+package com.maben.rocketmq001.rocketmq008_transation;
+
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.client.producer.TransactionListener;
+import org.apache.rocketmq.client.producer.TransactionMQProducer;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
+
+import java.io.UnsupportedEncodingException;
+import java.util.concurrent.*;
+
+/**
+ * 事物消息生产者
+ */
+public class TransactionProducer {
+    public static void main(String[] args) throws MQClientException, InterruptedException {
+        TransactionListener transactionListener = new TransactionListenerImpl();
+        TransactionMQProducer producer = new TransactionMQProducer("please_rename_unique_group_name");
+        producer.setNamesrvAddr("localhost:9876");
+        ExecutorService executorService = new ThreadPoolExecutor(2, 5, 100, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(2000), new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread thread = new Thread(r);
+                thread.setName("client-transaction-msg-check-thread");
+                return thread;
+            }
+        });
+
+        producer.setExecutorService(executorService);
+        producer.setTransactionListener(transactionListener);
+        producer.start();
+
+        String[] tags = new String[] {"TagA", "TagB", "TagC", "TagD", "TagE"};
+        for (int i = 0; i < 10; i++) {
+            try {
+                Message msg =
+                    new Message("TopicTest", tags[i % tags.length], "KEY" + i,
+                        ("Hello RocketMQ " + i).getBytes(RemotingHelper.DEFAULT_CHARSET));
+                SendResult sendResult = producer.sendMessageInTransaction(msg, null);
+                System.out.printf("%s%n", sendResult);
+
+                Thread.sleep(10);
+            } catch (MQClientException | UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
+        }
+
+        for (int i = 0; i < 100000; i++) {
+            Thread.sleep(1000);
+        }
+        producer.shutdown();
+    }
+}
+````
+
+##### 3.5.7.4 事物监听实现类
+
+````java
+package com.maben.rocketmq001.rocketmq008_transation;
+
+import org.apache.rocketmq.client.producer.LocalTransactionState;
+import org.apache.rocketmq.client.producer.TransactionListener;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.common.message.MessageExt;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * 事物监听实现类
+ */
+public class TransactionListenerImpl implements TransactionListener {
+    private AtomicInteger transactionIndex = new AtomicInteger(0);
+
+    private ConcurrentHashMap<String, Integer> localTrans = new ConcurrentHashMap<>();
+
+    /**
+     * 执行本地事物
+     * @param msg msg
+     * @param arg arg
+     * @return 本地事物状态
+     */
+    @Override
+    public LocalTransactionState executeLocalTransaction(Message msg, Object arg) {
+        int value = transactionIndex.getAndIncrement();
+        int status = value % 3;
+        localTrans.put(msg.getTransactionId(), status);
+        return LocalTransactionState.UNKNOW;
+    }
+
+    /**
+     * 当本地事物状态是「UNKNOW」的时候，回查本地事物状态
+     * @param msg msg
+     * @return 本地事物状态
+     */
+    @Override
+    public LocalTransactionState checkLocalTransaction(MessageExt msg) {
+        Integer status = localTrans.get(msg.getTransactionId());
+        if (null != status) {
+            switch (status) {
+                case 0:
+                    return LocalTransactionState.UNKNOW;
+                case 1:
+                    return LocalTransactionState.COMMIT_MESSAGE;
+                case 2:
+                    return LocalTransactionState.ROLLBACK_MESSAGE;
+                default:
+                    return LocalTransactionState.COMMIT_MESSAGE;
+            }
+        }
+        return LocalTransactionState.COMMIT_MESSAGE;
+    }
+}
+````
+
+### 3.5 消息轨迹
+
+#### 3.5.1 Broker端配置文件
+
+**这里贴出Broker端开启消息轨迹特性的properties配置文件内容：**
+
+````properties
+brokerClusterName=DefaultCluster
+brokerName=broker-a
+brokerId=0
+deleteWhen=04
+fileReservedTime=48
+brokerRole=ASYNC_MASTER
+flushDiskType=ASYNC_FLUSH
+storePathRootDir=/data/rocketmq/rootdir-a-m
+storePathCommitLog=/data/rocketmq/commitlog-a-m
+autoCreateSubscriptionGroup=true
+## if msg tracing is open,the flag will be true
+traceTopicEnable=true
+listenPort=10911
+brokerIP1=XX.XX.XX.XX1
+namesrvAddr=XX.XX.XX.XX:9876
+````
+
+#### 3.5.2 发送消息时开启消息轨迹
+
+````java
+				DefaultMQProducer producer = new DefaultMQProducer("ProducerGroupName",true);
+        producer.setNamesrvAddr("XX.XX.XX.XX1");
+        producer.start();
+            try {
+                {
+                    Message msg = new Message("TopicTest",
+                        "TagA",
+                        "OrderID188",
+                        "Hello world".getBytes(RemotingHelper.DEFAULT_CHARSET));
+                    SendResult sendResult = producer.send(msg);
+                    System.out.printf("%s%n", sendResult);
+                }
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+````
+
+#### 3.5.3 订阅消息时开启消息轨迹
+
+````java
+				DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("CID_JODIE_1",true);
+        consumer.subscribe("TopicTest", "*");
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+        consumer.setConsumeTimestamp("20181109221800");
+        consumer.registerMessageListener(new MessageListenerConcurrently() {
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs, ConsumeConcurrentlyContext context) {
+                System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msgs);
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
+        });
+        consumer.start();
+        System.out.printf("Consumer Started.%n");
+````
+
+#### 3.5.4 自定义消息轨迹
+
+````java
+				##其中Topic_test11111需要用户自己预先创建，来保存消息轨迹；
+        DefaultMQProducer producer = new DefaultMQProducer("ProducerGroupName",true,"Topic_test11111");
+        ......
+
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("CID_JODIE_1",true,"Topic_test11111");
+        ......
 ````
 

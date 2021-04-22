@@ -3600,3 +3600,482 @@ namesrvAddr=XX.XX.XX.XX:9876
         ......
 ````
 
+### 3.5 整合springboot
+
+#### 3.5.1 资料
+
+> 这里只是介绍发送普通消息和事务消息，其他的发送消息方式直接查看https://github.com/apache/rocketmq-spring
+
+#### 3.5.2 pom.xml
+
+````xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>2.0.5.RELEASE</version>
+        <relativePath/>
+    </parent>
+    <groupId>com.maben</groupId>
+    <artifactId>rocketmq-002-springboot</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>Finchley.SR2</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <!--common dependency-->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.5</version>
+        </dependency>
+        <!--springboot rocketmq-->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-spring-boot-starter</artifactId>
+            <version>2.1.1</version>
+        </dependency>
+        <!--springboot web-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!--springboot test-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+````
+
+#### 3.5.3 application.properties
+
+````properties
+rocketmq.name-server=localhost:9876
+rocketmq.producer.group=springboot-group
+
+# 自定义模板类
+demo.rocketmq.extNameServer=localhost:9876
+````
+
+#### 3.5.4 启动类
+
+````java
+package com.maben.rocketmq_springboot;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+/**
+ * 启动类
+ */
+@SpringBootApplication
+public class SpringbootRocketmqApplication {
+    public static void main(String[] args)throws Exception{
+        SpringApplication.run(SpringbootRocketmqApplication.class,args);
+        System.out.println("**************启动成功！！！************");
+    }
+}
+````
+
+#### 3.5.5 常量类
+
+````java
+package com.maben.rocketmq_springboot.constant;
+
+/**
+ * 我的常量类
+ */
+public class MyConstant {
+    public static final String topic="TestTopic";
+}
+````
+
+#### 3.5.6 配置producer相关
+
+##### 3.5.6.1 生产者
+
+````java
+package com.maben.rocketmq_springboot.basic;
+
+import com.maben.rocketmq_springboot.config.ExtRocketMQTemplate;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.apache.rocketmq.spring.support.RocketMQHeaders;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.Resource;
+
+/**
+ * RocketMQ 消息发送端
+ *  注意：事务监听器定义为MyTransactionListener
+ */
+@Component
+public class MQProducer {
+
+    @Resource
+    private RocketMQTemplate rocketMQTemplate;
+
+    @Resource
+    private ExtRocketMQTemplate extRocketMQTemplate;
+
+    /**
+     * 发送普通消息
+     * @param topic topic
+     * @param message message
+     * @throws Exception
+     */
+    public void sendMessage(String topic, String message) throws Exception {
+        rocketMQTemplate.convertAndSend(topic, message);
+    }
+
+    /**
+     * 发送事物1消息
+     * @param topic topic
+     * @param message message
+     * @throws Exception
+     */
+    public void sendTransaction1Message(String topic, String message) throws Exception {
+        String[] tags = { "TagA", "TagB", "TagC", "TagD", "TagE" };
+        for (int i = 0; i < 10; i++) {
+            try {
+                Message msg = MessageBuilder
+                        .withPayload(message + "-111-" + i) //设置消息
+                        .setHeader(RocketMQHeaders.TRANSACTION_ID, "KEY_" + i)//设置请求头
+                        .build();
+                SendResult sendResult = rocketMQTemplate.sendMessageInTransaction(
+                        topic + ":" + tags[i % tags.length], msg, null);
+                System.out.printf("send Transactional111 msg body = %s , sendResult=%s %n", msg.getPayload(), sendResult.getSendStatus());
+                Thread.sleep(10);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * 发送事物2消息
+     * @param topic topic
+     * @param message message
+     * @throws Exception
+     */
+    public void sendTransaction2Message(String topic, String message) throws Exception {
+        String[] tags = { "TagA", "TagB", "TagC", "TagD", "TagE" };
+        for (int i = 0; i < 10; i++) {
+            try {
+                Message msg = MessageBuilder
+                        .withPayload(message + "-222-" + i) //设置消息
+                        .setHeader(RocketMQHeaders.TRANSACTION_ID, "KEY_" + i)//设置请求头
+                        .build();
+                SendResult sendResult = extRocketMQTemplate.sendMessageInTransaction(
+                        topic + ":" + tags[i % tags.length], msg, null);
+                System.out.printf("send Transactional222 msg body = %s , sendResult=%s %n", msg.getPayload(), sendResult.getSendStatus());
+                Thread.sleep(10);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+}
+````
+
+##### 3.5.6.2  自定义模板类
+
+````java
+package com.maben.rocketmq_springboot.config;
+
+import org.apache.rocketmq.spring.annotation.ExtRocketMQTemplateConfiguration;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
+
+/**
+ * 配置多数据源方式
+ */
+@ExtRocketMQTemplateConfiguration(nameServer = "${demo.rocketmq.extNameServer}")
+public class ExtRocketMQTemplate extends RocketMQTemplate {
+}
+````
+
+##### 3.5.6.3 事物监听器1
+
+````java
+package com.maben.rocketmq_springboot.listener;
+
+import org.apache.rocketmq.spring.annotation.RocketMQTransactionListener;
+import org.apache.rocketmq.spring.core.RocketMQLocalTransactionListener;
+import org.apache.rocketmq.spring.core.RocketMQLocalTransactionState;
+import org.apache.rocketmq.spring.support.RocketMQHeaders;
+import org.springframework.messaging.Message;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * 设置事务监听器
+ */
+@RocketMQTransactionListener(rocketMQTemplateBeanName = "rocketMQTemplate")
+public class MyTransaction1Listener implements RocketMQLocalTransactionListener {
+    private AtomicInteger transactionIndex = new AtomicInteger(0);
+
+    private ConcurrentHashMap<String, Integer> localTrans = new ConcurrentHashMap<String, Integer>();
+
+    /**
+     * 执行本地事物
+     * @param msg msg
+     * @param arg arg
+     * @return
+     */
+    @Override
+    public RocketMQLocalTransactionState executeLocalTransaction(Message msg, Object arg) {
+        String transId = (String) msg.getHeaders().get(RocketMQHeaders.TRANSACTION_ID);
+        System.out.printf("111#### executeLocalTransaction is executed, msgTransactionId=%s %n", transId);
+        int value = transactionIndex.getAndIncrement();
+        int status = value % 3;
+        localTrans.put(transId, status);
+        if (status == 0) {
+            // Return local transaction with success(commit), in this case,
+            // this message will not be checked in checkLocalTransaction()
+            System.out.printf("1111# COMMIT # Simulating msg %s related local transaction exec succeeded! ### %n", msg.getPayload());
+            return RocketMQLocalTransactionState.COMMIT;
+        }
+
+        if (status == 1) {
+            // Return local transaction with failure(rollback) , in this case,
+            // this message will not be checked in checkLocalTransaction()
+            System.out.printf("1111# ROLLBACK # Simulating %s related local transaction exec failed! %n", msg.getPayload());
+            return RocketMQLocalTransactionState.ROLLBACK;
+        }
+
+        System.out.printf("1111 # UNKNOW # Simulating %s related local transaction exec UNKNOWN! \n");
+        return RocketMQLocalTransactionState.UNKNOWN;
+    }
+
+    /**
+     * 回过头来继续检查本地事物
+     * @param msg msg
+     * @return 返回本地事物状态
+     */
+    @Override
+    public RocketMQLocalTransactionState checkLocalTransaction(Message msg) {
+        String transId = (String) msg.getHeaders().get(RocketMQHeaders.TRANSACTION_ID);
+        RocketMQLocalTransactionState retState = RocketMQLocalTransactionState.COMMIT;
+        Integer status = localTrans.get(transId);
+        if (null != status) {
+            switch (status) {
+            case 0:
+                retState = RocketMQLocalTransactionState.COMMIT;
+                break;
+            case 1:
+                retState = RocketMQLocalTransactionState.ROLLBACK;
+                break;
+            case 2:
+                retState = RocketMQLocalTransactionState.UNKNOWN;
+                break;
+            }
+        }
+        System.out.printf("----1111-- !!! checkLocalTransaction is executed once," + " msgTransactionId=%s, TransactionState=%s status=%s %n", transId, retState, status);
+        return retState;
+    }
+}
+````
+
+##### 3.5.6.4 事务监听器2
+
+````java
+package com.maben.rocketmq_springboot.listener;
+
+import org.apache.rocketmq.spring.annotation.RocketMQTransactionListener;
+import org.apache.rocketmq.spring.core.RocketMQLocalTransactionListener;
+import org.apache.rocketmq.spring.core.RocketMQLocalTransactionState;
+import org.apache.rocketmq.spring.support.RocketMQHeaders;
+import org.springframework.messaging.Message;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * 设置事务监听器
+ */
+@RocketMQTransactionListener(rocketMQTemplateBeanName = "extRocketMQTemplate")
+public class MyTransaction2Listener implements RocketMQLocalTransactionListener {
+    private AtomicInteger transactionIndex = new AtomicInteger(0);
+
+    private ConcurrentHashMap<String, Integer> localTrans = new ConcurrentHashMap<String, Integer>();
+
+    /**
+     * 执行本地事物
+     * @param msg msg
+     * @param arg arg
+     * @return
+     */
+    @Override
+    public RocketMQLocalTransactionState executeLocalTransaction(Message msg, Object arg) {
+        String transId = (String) msg.getHeaders().get(RocketMQHeaders.TRANSACTION_ID);
+        System.out.printf("2222#### executeLocalTransaction is executed, msgTransactionId=%s %n", transId);
+        int value = transactionIndex.getAndIncrement();
+        int status = value % 3;
+        localTrans.put(transId, status);
+        if (status == 0) {
+            // Return local transaction with success(commit), in this case,
+            // this message will not be checked in checkLocalTransaction()
+            System.out.printf("2222 # COMMIT # Simulating msg %s related local transaction exec succeeded! ### %n", msg.getPayload());
+            return RocketMQLocalTransactionState.COMMIT;
+        }
+
+        if (status == 1) {
+            // Return local transaction with failure(rollback) , in this case,
+            // this message will not be checked in checkLocalTransaction()
+            System.out.printf(" 2222 # ROLLBACK # Simulating %s related local transaction exec failed! %n", msg.getPayload());
+            return RocketMQLocalTransactionState.ROLLBACK;
+        }
+
+        System.out.printf(" 2222  # UNKNOW # Simulating %s related local transaction exec UNKNOWN! \n");
+        return RocketMQLocalTransactionState.UNKNOWN;
+    }
+
+    /**
+     * 回过头来继续检查本地事物
+     * @param msg msg
+     * @return 返回本地事物状态
+     */
+    @Override
+    public RocketMQLocalTransactionState checkLocalTransaction(Message msg) {
+        String transId = (String) msg.getHeaders().get(RocketMQHeaders.TRANSACTION_ID);
+        RocketMQLocalTransactionState retState = RocketMQLocalTransactionState.COMMIT;
+        Integer status = localTrans.get(transId);
+        if (null != status) {
+            switch (status) {
+            case 0:
+                retState = RocketMQLocalTransactionState.COMMIT;
+                break;
+            case 1:
+                retState = RocketMQLocalTransactionState.ROLLBACK;
+                break;
+            case 2:
+                retState = RocketMQLocalTransactionState.UNKNOWN;
+                break;
+            }
+        }
+        System.out.printf("---2222--- !!! checkLocalTransaction is executed once," + " msgTransactionId=%s, TransactionState=%s status=%s %n", transId, retState, status);
+        return retState;
+    }
+}
+````
+
+##### 3.5.6.5 请求测试类
+
+````java
+package com.maben.rocketmq_springboot.controller;
+
+import com.maben.rocketmq_springboot.basic.MQProducer;
+import com.maben.rocketmq_springboot.constant.MyConstant;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.annotation.Resource;
+
+/**
+ * MQ Send Test
+ */
+@RestController
+@RequestMapping("MQTest")
+public class MQTestController {
+
+    @Resource
+    private MQProducer mqProducer;
+
+    /**
+     * send common message
+     * @param message message
+     * @return send result
+     */
+    @RequestMapping("/sendMessage")
+    public String sendMessage(String message){
+        try {
+            mqProducer.sendMessage(MyConstant.topic,message);
+        }catch (Exception e){
+            e.printStackTrace();
+            return "send error,message is "+e.getMessage();
+        }
+        return "send success";
+    }
+
+    /**
+     * send transaction message
+     * @param message message
+     * @return send result
+     */
+    @RequestMapping("/sendTransactionMessage")
+    public String sendTransactionMessage(String message){
+        try {
+            mqProducer.sendTransaction1Message(MyConstant.topic,message);
+            mqProducer.sendTransaction2Message(MyConstant.topic,message);
+        }catch (Exception e){
+            e.printStackTrace();
+            return "send error,message is "+e.getMessage();
+        }
+        return "send transaction message success.";
+    }
+
+}
+````
+
+#### 3.5.7 配置consumer
+
+````java
+package com.maben.rocketmq_springboot.consumer;
+
+import com.maben.rocketmq_springboot.constant.MyConstant;
+import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
+import org.apache.rocketmq.spring.core.RocketMQListener;
+import org.springframework.stereotype.Component;
+
+/**
+ * RocketMQ Consumer
+ */
+@Component
+@RocketMQMessageListener(consumerGroup = "MyConsumerGroup",topic = MyConstant.topic)
+public class MyConsumer implements RocketMQListener<String> {
+    @Override
+    public void onMessage(String message) {
+        System.out.println("received message is "+message);
+    }
+}
+````
+
+
+

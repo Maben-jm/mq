@@ -4077,5 +4077,461 @@ public class MyConsumer implements RocketMQListener<String> {
 }
 ````
 
+### 3.6 整合springcloudstream
 
+> 资料GitHub地址： https://github.com/alibaba/spring-cloud-alibaba
+
+#### 3.6.1 pom.xml
+
+````xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.maben</groupId>
+    <artifactId>rocketmq-003-springcloudstream</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>2.3.1.RELEASE</version>
+        <relativePath/>
+    </parent>
+
+    <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>Hoxton.SR9</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!--springcloudstream rocketmq-->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-stream-rocketmq</artifactId>
+            <version>2.2.3.RELEASE</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.rocketmq</groupId>
+                    <artifactId>rocketmq-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.rocketmq</groupId>
+                    <artifactId>rocketmq-acl</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!--rocketmq-->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-client</artifactId>
+            <version>4.7.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-acl</artifactId>
+            <version>4.7.1</version>
+        </dependency>
+        <!--springboot web-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!--spring actuator-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!--lombok依赖-->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+
+
+</project>
+````
+
+#### 3.6.2  application.properties
+
+````properties
+spring.application.name=rocketmq-produce-example
+server.port=28081
+
+#binder config
+spring.cloud.stream.rocketmq.binder.name-server=127.0.0.1:9876
+
+# first output config
+spring.cloud.stream.bindings.output1.destination=test-topic
+spring.cloud.stream.bindings.output1.content-type=application/json
+spring.cloud.stream.rocketmq.bindings.output1.producer.group=binder-group
+spring.cloud.stream.rocketmq.bindings.output1.producer.sync=true
+#first input config
+spring.cloud.stream.bindings.input1.destination=test-topic
+spring.cloud.stream.bindings.input1.content-type=text/plain
+spring.cloud.stream.bindings.input1.group=test-group1
+spring.cloud.stream.rocketmq.bindings.input1.consumer.orderly=true
+
+#second output config
+spring.cloud.stream.bindings.output2.destination=TransactionTopic
+spring.cloud.stream.bindings.output2.content-type=application/json
+spring.cloud.stream.rocketmq.bindings.output2.producer.transactional=true
+spring.cloud.stream.rocketmq.bindings.output2.producer.group=myTxProducerGroup
+#second input config
+spring.cloud.stream.bindings.input2.destination=TransactionTopic
+spring.cloud.stream.bindings.input2.content-type=text/plain
+spring.cloud.stream.bindings.input2.group=test-group2
+spring.cloud.stream.rocketmq.bindings.input2.consumer.orderly=false
+spring.cloud.stream.rocketmq.bindings.input2.consumer.tags=tagStr
+spring.cloud.stream.bindings.input2.consumer.concurrency=20
+spring.cloud.stream.bindings.input2.consumer.maxAttempts=1
+````
+
+#### 3.6.3 启动类
+
+````java
+package com.maben.springcloudstream;
+
+import com.maben.springcloudstream.base.MySink;
+import com.maben.springcloudstream.base.MySource;
+import com.maben.springcloudstream.myCommodLineRunner.CustomRunner;
+import com.maben.springcloudstream.myCommodLineRunner.CustomRunnerWithTransactional;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.stream.annotation.EnableBinding;
+import org.springframework.context.annotation.Bean;
+
+/**
+ * 启动类
+ * EnableBinding是说建立消息的通道
+ *  source：发送消息
+ *  sink：接收消息
+ */
+@EnableBinding(value = { MySource.class , MySink.class })
+@SpringBootApplication
+public class SpringCloudStreamApplication {
+
+    public static void main(String[] args){
+        SpringApplication.run(SpringCloudStreamApplication.class,args);
+        System.out.println("**********启动成功！！！***********");
+    }
+
+    /**
+     * 启动自测output1
+     * @return customRunner bean
+     */
+    @Bean
+    public CustomRunner customRunner() {
+        return new CustomRunner("output1");
+    }
+
+    /**
+     * 启动自测output2
+     * @return customRunnerWithTransactional bean
+     */
+    @Bean
+    public CustomRunnerWithTransactional customRunnerWithTransactional() {
+        return new CustomRunnerWithTransactional();
+    }
+
+}
+````
+
+#### 3.6.4 base类
+
+> MySink
+
+````java
+package com.maben.springcloudstream.base;
+
+import org.springframework.cloud.stream.annotation.Input;
+import org.springframework.messaging.SubscribableChannel;
+
+public interface MySink {
+
+    @Input("input1")
+    SubscribableChannel input1();
+
+    @Input("input2")
+    SubscribableChannel input2();
+
+}
+````
+
+> MySource
+
+````java
+package com.maben.springcloudstream.base;
+
+import org.springframework.cloud.stream.annotation.Output;
+import org.springframework.messaging.MessageChannel;
+
+/**
+ * 自定义输出类
+ */
+public interface MySource {
+
+    @Output("output1")
+    MessageChannel output1();
+
+    @Output("output2")
+    MessageChannel output2();
+
+}
+````
+
+#### 3.6.5 事务发送实现类
+
+````java
+package com.maben.springcloudstream.config;
+
+import org.apache.rocketmq.spring.annotation.RocketMQTransactionListener;
+import org.apache.rocketmq.spring.core.RocketMQLocalTransactionListener;
+import org.apache.rocketmq.spring.core.RocketMQLocalTransactionState;
+
+import org.springframework.messaging.Message;
+
+/**
+ * 事务消息实现类
+ */
+@RocketMQTransactionListener(txProducerGroup = "myTxProducerGroup", corePoolSize = 5,
+		maximumPoolSize = 10)
+public class TransactionListenerImpl implements RocketMQLocalTransactionListener {
+
+	@Override
+	public RocketMQLocalTransactionState executeLocalTransaction(Message msg,
+			Object arg) {
+		Object num = msg.getHeaders().get("test");
+
+		if ("1".equals(num)) {
+			System.out.println(
+					"executer: " + new String((byte[]) msg.getPayload()) + " unknown");
+			return RocketMQLocalTransactionState.UNKNOWN;
+		}
+		else if ("2".equals(num)) {
+			System.out.println(
+					"executer: " + new String((byte[]) msg.getPayload()) + " rollback");
+			return RocketMQLocalTransactionState.ROLLBACK;
+		}
+		System.out.println(
+				"executer: " + new String((byte[]) msg.getPayload()) + " commit");
+		return RocketMQLocalTransactionState.COMMIT;
+	}
+
+	@Override
+	public RocketMQLocalTransactionState checkLocalTransaction(Message msg) {
+		System.out.println("check: " + new String((byte[]) msg.getPayload()));
+		return RocketMQLocalTransactionState.COMMIT;
+	}
+
+}
+````
+
+#### 3.6.6 pojo类
+
+````java
+package com.maben.springcloudstream.pojo;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.ToString;
+
+@Data
+@ToString
+@AllArgsConstructor
+public class Foo {
+
+	private int id;
+
+	private String bar;
+
+}
+````
+
+#### 3.6.7 业务类
+
+> 发送
+
+````java
+package com.maben.springcloudstream.service;
+
+import com.maben.springcloudstream.base.MySource;
+import org.apache.rocketmq.common.message.MessageConst;
+import org.apache.rocketmq.spring.support.RocketMQHeaders;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHeaders;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.stereotype.Service;
+import org.springframework.util.MimeTypeUtils;
+
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * 消息发送业务类
+ */
+@Service
+public class SenderService {
+
+	@Autowired
+	private MySource source;
+
+	public void send(String msg) throws Exception {
+		source.output1().send(MessageBuilder.withPayload(msg).build());
+	}
+
+	public <T> void sendWithTags(T msg, String tag) throws Exception {
+		Message message = MessageBuilder.createMessage(msg,
+				new MessageHeaders(Stream.of(tag).collect(Collectors
+						.toMap(str -> MessageConst.PROPERTY_TAGS, String::toString))));
+		source.output1().send(message);
+	}
+
+	public <T> void sendObject(T msg, String tag) throws Exception {
+		Message message = MessageBuilder.withPayload(msg)
+				.setHeader(MessageConst.PROPERTY_TAGS, tag)
+				.setHeader(MessageHeaders.CONTENT_TYPE, MimeTypeUtils.APPLICATION_JSON)
+				.build();
+		source.output1().send(message);
+	}
+
+	public <T> void sendTransactionalMsg(T msg, int num) throws Exception {
+		MessageBuilder builder = MessageBuilder.withPayload(msg)
+				.setHeader(MessageHeaders.CONTENT_TYPE, MimeTypeUtils.APPLICATION_JSON);
+		builder.setHeader("test", String.valueOf(num));
+		builder.setHeader(RocketMQHeaders.TAGS, "binder");
+		Message message = builder.build();
+		source.output2().send(message);
+	}
+
+}
+````
+
+> 接收
+
+````java
+package com.maben.springcloudstream.service;
+
+import org.springframework.cloud.stream.annotation.StreamListener;
+import org.springframework.stereotype.Service;
+
+/**
+ *
+ * 消息接收业务类
+ *
+ */
+@Service
+public class ReceiveService {
+
+    @StreamListener("input1")
+    public void receiveInput1(String receiveMsg) {
+        System.out.println("input1 receive: " + receiveMsg);
+    }
+
+    @StreamListener("input2")
+    public void receiveInput2(String receiveMsg) {
+        System.out.println("input2 receive: " + receiveMsg);
+    }
+}
+````
+
+3.6.8 测试类
+
+> 普通消息生产者
+
+````java
+package com.maben.springcloudstream.myCommodLineRunner;
+
+import com.maben.springcloudstream.service.SenderService;
+import com.maben.springcloudstream.pojo.Foo;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.CommandLineRunner;
+
+public class CustomRunner implements CommandLineRunner {
+
+		private final String bindingName;
+
+		public CustomRunner(String bindingName) {
+			this.bindingName = bindingName;
+		}
+
+		@Autowired
+		private SenderService senderService;
+
+		@Override
+		public void run(String... args) throws Exception {
+			if ("output1".equals(this.bindingName)) {
+				int count = 5;
+				for (int index = 1; index <= count; index++) {
+					String msgContent = "msg-" + index;
+					if (index % 3 == 0) {
+						senderService.send(msgContent);
+					}
+					else if (index % 3 == 1) {
+						senderService.sendWithTags(msgContent, "tagStr");
+					}
+					else {
+						senderService.sendObject(new Foo(index, "foo"), "tagObj");
+					}
+				}
+			}
+
+		}
+
+	}
+````
+
+> 事务消息生产者
+
+````java
+package com.maben.springcloudstream.myCommodLineRunner;
+
+import com.maben.springcloudstream.service.SenderService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.CommandLineRunner;
+
+public class CustomRunnerWithTransactional implements CommandLineRunner {
+
+		@Autowired
+		private SenderService senderService;
+
+		@Override
+		public void run(String... args) throws Exception {
+			// COMMIT_MESSAGE message
+			senderService.sendTransactionalMsg("transactional-msg1", 1);
+			// ROLLBACK_MESSAGE message
+			senderService.sendTransactionalMsg("transactional-msg2", 2);
+			// ROLLBACK_MESSAGE message
+			senderService.sendTransactionalMsg("transactional-msg3", 3);
+			// COMMIT_MESSAGE message
+			senderService.sendTransactionalMsg("transactional-msg4", 4);
+		}
+
+	}
+````
 
